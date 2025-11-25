@@ -622,6 +622,28 @@ body {
     gap: 8px;
 }
 
+/* Neue CSS Klasse für mini Stats */
+.stat-mini {
+    background: var(--bg-tertiary);
+    padding: 16px;
+    border-radius: 8px;
+    border-left: 4px solid var(--accent-blue);
+}
+
+/* Payment Info */
+.payment-info {
+    background: var(--bg-tertiary);
+    padding: 12px;
+    border-radius: 8px;
+    margin: 12px 0;
+    font-size: 14px;
+}
+
+.change-positive {
+    color: var(--accent-green);
+    font-weight: 600;
+}
+
 /* Responsive */
 @media (max-width: 1024px) {
     .kasse-layout {

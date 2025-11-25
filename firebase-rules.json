@@ -1,19 +1,21 @@
 {
   "rules": {
     "users": {
-      ".read": false,
+      ".read": true,
       ".write": false,
-      ".indexOn": ["username", "role"]
+      ".indexOn": ["username"]
     },
     "products": {
-      ".read": false,
-      ".write": false,
-      ".indexOn": ["name", "category"]
+      ".read": true,
+      ".write": true
     },
     "sales": {
-      ".read": false,
-      ".write": false,
-      ".indexOn": ["timestamp", "employeeId"]
+      ".read": true,
+      ".write": true
+    },
+    "dienstplan": {
+      ".read": true,
+      ".write": true
     }
   }
 }

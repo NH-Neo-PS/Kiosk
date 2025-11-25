@@ -1,0 +1,17 @@
+{
+  "rules": {
+    "users": {
+      ".read": "query.limitToFirst(1).isValid() || query.limitToLast(1).isValid()",
+      ".write": false,
+      ".indexOn": ["username"]
+    },
+    "products": {
+      ".read": true,
+      ".write": false
+    },
+    "sales": {
+      ".read": true,
+      ".write": true
+    }
+  }
+}

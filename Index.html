@@ -39,7 +39,7 @@
                     <span class="icon">📊</span>
                     <span>Übersicht</span>
                 </a>
-                <a href="#" class="nav-link" data-view="kasse">
+                <a href="#" class="nav-link" data-view="kasse" id="navKasse">
                     <span class="icon">💰</span>
                     <span>Kasse</span>
                 </a>
@@ -54,6 +54,10 @@
                 <a href="#" class="nav-link" data-view="benutzerverwaltung" id="navBenutzerverwaltung">
                     <span class="icon">👤</span>
                     <span>Benutzer</span>
+                </a>
+                <a href="#" class="nav-link" data-view="dienstplan" id="navDienstplan">
+                    <span class="icon">📅</span>
+                    <span>Dienstplan</span>
                 </a>
                 <a href="#" class="nav-link" data-view="protokoll">
                     <span class="icon">📋</span>
@@ -97,29 +101,59 @@
                         <span>Gesamtumsatz</span>
                         <p class="stat-value" id="statTotalRevenue">0€</p>
                     </div>
+
+                    <div class="stat-card">
+                        <span>Mitarbeiter Online</span>
+                        <p class="stat-value" id="statEmployees">0</p>
+                    </div>
                 </div>
 
                 <div class="section">
-                    <h3>Letzte Aktivitäten</h3>
+                    <h3>📋 Letzte 10 Verkäufe</h3>
                     <div id="recentLogs" class="logs-container"></div>
+                </div>
+
+                <div class="section">
+                    <h3>📊 Tagesstatistik</h3>
+                    <div id="dailyStats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;"></div>
                 </div>
             </div>
 
             <!-- Kasse View -->
             <div id="kasseView" class="view">
-                <h2>Kasse</h2>
+                <h2>💰 Kasse</h2>
                 
                 <div class="kasse-layout">
                     <div class="products-grid" id="productsGrid"></div>
                     
                     <div class="cart-section">
-                        <h3>Warenkorb</h3>
+                        <h3>🛒 Warenkorb</h3>
                         <div id="cartItems" class="cart-items"></div>
                         <div class="cart-total">
                             <span>Gesamt:</span>
                             <span id="cartTotal">0.00€</span>
                         </div>
-                        <button class="btn btn-success" id="completeSaleBtn">Verkauf abschließen</button>
+                        
+                        <!-- Zahlungsbereich -->
+                        <div id="paymentSection" style="display: none; background: var(--bg-tertiary); padding: 16px; border-radius: 8px; margin-bottom: 16px;">
+                            <h4 style="margin-bottom: 12px;">💳 Zahlung</h4>
+                            <div style="margin-bottom: 12px;">
+                                <label style="display: block; font-size: 12px; color: #9ca3af; margin-bottom: 4px;">Gesamt:</label>
+                                <div style="font-size: 20px; font-weight: 700;" id="paymentTotal">0.00€</div>
+                            </div>
+                            <div style="margin-bottom: 12px;">
+                                <label style="display: block; font-size: 12px; color: #9ca3af; margin-bottom: 4px;">Kunde bezahlt (€):</label>
+                                <input type="number" id="paymentInput" placeholder="0.00" step="0.01" style="width: 100%; padding: 12px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px; color: white; font-size: 16px;">
+                            </div>
+                            <div style="background: var(--bg-secondary); padding: 12px; border-radius: 6px; margin-bottom: 12px;">
+                                <div style="font-size: 12px; color: #9ca3af; margin-bottom: 4px;">Wechselgeld:</div>
+                                <div style="font-size: 18px; font-weight: 700; color: var(--accent-green);" id="changeAmount">0.00€</div>
+                            </div>
+                            <button type="button" class="btn btn-success" id="confirmPaymentBtn" style="margin-bottom: 8px;">✓ Verkauf bestätigen</button>
+                            <button type="button" class="btn btn-danger" id="cancelPaymentBtn">✗ Abbrechen</button>
+                        </div>
+                        
+                        <button class="btn btn-success" id="completeSaleBtn">💳 Verkauf abschließen</button>
                     </div>
                 </div>
             </div>
@@ -173,6 +207,37 @@
                 <div class="section">
                     <h3>Alle Benutzer</h3>
                     <div id="usersList" class="users-list"></div>
+                </div>
+            </div>
+
+            <!-- Dienstplan View (nur Admin) -->
+            <div id="dienstplanView" class="view">
+                <h2>Dienstplan</h2>
+                
+                <div class="section">
+                    <h3>Neuen Dienstplan-Eintrag erstellen</h3>
+                    <form id="dienstplanForm" class="product-form">
+                        <select id="dienstplanDay" required>
+                            <option value="">Tag auswählen</option>
+                            <option value="Montag">Montag</option>
+                            <option value="Dienstag">Dienstag</option>
+                            <option value="Mittwoch">Mittwoch</option>
+                            <option value="Donnerstag">Donnerstag</option>
+                            <option value="Freitag">Freitag</option>
+                            <option value="Samstag">Samstag</option>
+                        </select>
+                        <select id="dienstplanEmployee" required>
+                            <option value="">Mitarbeiter auswählen</option>
+                        </select>
+                        <input type="time" id="dienstplanStart" required>
+                        <input type="time" id="dienstplanEnd" required>
+                        <button type="submit" class="btn btn-primary">Hinzufügen</button>
+                    </form>
+                </div>
+
+                <div class="section">
+                    <h3>📅 Dienstplan-Übersicht</h3>
+                    <div id="dienstplanList"></div>
                 </div>
             </div>
 
