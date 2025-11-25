@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Schulkiosk Management System</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Login Screen -->
+    <div id="loginScreen" class="login-container">
+        <div class="login-box">
+            <h1>🏪 Schulkiosk Login</h1>
+            <form id="loginForm">
+                <div class="form-group">
+                    <label>E-Mail</label>
+                    <input type="email" id="loginEmail" placeholder="deine@email.de" required>
+                </div>
+                <div class="form-group">
+                    <label>Passwort</label>
+                    <input type="password" id="loginPassword" placeholder="••••••••" required>
+                </div>
+                <button type="submit" class="btn btn-primary">Anmelden</button>
+                <div id="loginError" class="error-message"></div>
+            </form>
+            <div class="register-link">
+                <p>Noch kein Account? <a href="#" id="showRegister">Registrieren</a></p>
+            </div>
+        </div>
+
+        <!-- Register Screen -->
+        <div class="login-box" id="registerBox" style="display: none;">
+            <h1>Registrierung</h1>
+            <form id="registerForm">
+                <div class="form-group">
+                    <label>Name</label>
+                    <input type="text" id="registerName" placeholder="Max Mustermann" required>
+                </div>
+                <div class="form-group">
+                    <label>E-Mail</label>
+                    <input type="email" id="registerEmail" placeholder="deine@email.de" required>
+                </div>
+                <div class="form-group">
+                    <label>Passwort</label>
+                    <input type="password" id="registerPassword" placeholder="••••••••" required>
+                </div>
+                <div class="form-group">
+                    <label>Rolle</label>
+                    <select id="registerRole" required>
+                        <option value="mitschueler">Mitschüler</option>
+                        <option value="it">IT</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn btn-primary">Registrieren</button>
+                <div id="registerError" class="error-message"></div>
+            </form>
+            <div class="register-link">
+                <p><a href="#" id="showLogin">Zurück zum Login</a></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main App -->
+    <div id="mainApp" style="display: none;">
+        <!-- Sidebar -->
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <h1>🏪 Kiosk</h1>
+            </div>
+            
+            <div class="nav-links">
+                <a href="#" class="nav-link active" data-view="dashboard">
+                    <span class="icon">📊</span>
+                    <span>Übersicht</span>
+                </a>
+                <a href="#" class="nav-link" data-view="kasse">
+                    <span class="icon">💰</span>
+                    <span>Kasse</span>
+                </a>
+                <a href="#" class="nav-link" data-view="produkte" id="navProdukte">
+                    <span class="icon">📦</span>
+                    <span>Produkte</span>
+                </a>
+                <a href="#" class="nav-link" data-view="mitarbeiter" id="navMitarbeiter">
+                    <span class="icon">👥</span>
+                    <span>Mitarbeiter</span>
+                </a>
+                <a href="#" class="nav-link" data-view="protokoll">
+                    <span class="icon">📋</span>
+                    <span>Protokoll</span>
+                </a>
+            </div>
+
+            <div class="sidebar-footer">
+                <div class="user-info">
+                    <div class="user-avatar" id="userAvatar">MM</div>
+                    <div>
+                        <p class="user-name" id="userName">Max Mustermann</p>
+                        <p class="user-role" id="userRole">Admin</p>
+                    </div>
+                </div>
+                <button class="btn btn-danger" id="logoutBtn">Abmelden</button>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Dashboard View -->
+            <div id="dashboardView" class="view active">
+                <h2>Meine Übersicht</h2>
+                
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <span>Verkäufe Heute</span>
+                            <span class="stat-icon">🛒</span>
+                        </div>
+                        <p class="stat-value" id="statSales">0</p>
+                    </div>
+                    
+                    <div class="stat-card">
+                        <span>Umsatz Heute</span>
+                        <p class="stat-value" id="statRevenue">0€</p>
+                    </div>
+                    
+                    <div class="stat-card">
+                        <span>Gesamtumsatz</span>
+                        <p class="stat-value" id="statTotalRevenue">0€</p>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <h3>Letzte Aktivitäten</h3>
+                    <div id="recentLogs" class="logs-container"></div>
+                </div>
+            </div>
+
+            <!-- Kasse View -->
+            <div id="kasseView" class="view">
+                <h2>Kasse</h2>
+                
+                <div class="kasse-layout">
+                    <div class="products-grid" id="productsGrid"></div>
+                    
+                    <div class="cart-section">
+                        <h3>Warenkorb</h3>
+                        <div id="cartItems" class="cart-items"></div>
+                        <div class="cart-total">
+                            <span>Gesamt:</span>
+                            <span id="cartTotal">0.00€</span>
+                        </div>
+                        <button class="btn btn-success" id="completeSaleBtn">Verkauf abschließen</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Produkte View -->
+            <div id="produkteView" class="view">
+                <h2>Produktverwaltung</h2>
+                
+                <div class="section">
+                    <h3>Neues Produkt hinzufügen</h3>
+                    <form id="addProductForm" class="product-form">
+                        <input type="text" id="productName" placeholder="Produktname" required>
+                        <input type="number" id="productPrice" placeholder="Preis (€)" step="0.01" required>
+                        <input type="number" id="productStock" placeholder="Lagerbestand" required>
+                        <input type="text" id="productCategory" placeholder="Kategorie" required>
+                        <button type="submit" class="btn btn-primary">Hinzufügen</button>
+                    </form>
+                </div>
+
+                <div class="section">
+                    <h3>Alle Produkte</h3>
+                    <div id="productsList" class="products-list"></div>
+                </div>
+            </div>
+
+            <!-- Mitarbeiter View -->
+            <div id="mitarbeiterView" class="view">
+                <h2>Mitarbeiterverwaltung</h2>
+                <div id="employeesList" class="employees-list"></div>
+            </div>
+
+            <!-- Protokoll View -->
+            <div id="protokollView" class="view">
+                <h2>Verkaufsprotokolle</h2>
+                <div id="salesLogs" class="logs-table"></div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+    
+    <!-- Custom JS -->
+    <script src="app.js"></script>
+</body>
+</html>
