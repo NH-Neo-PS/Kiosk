@@ -1,0 +1,19 @@
+{
+  "rules": {
+    "users": {
+      ".read": false,
+      ".write": false,
+      ".indexOn": ["username", "role"]
+    },
+    "products": {
+      ".read": false,
+      ".write": false,
+      ".indexOn": ["name", "category"]
+    },
+    "sales": {
+      ".read": false,
+      ".write": false,
+      ".indexOn": ["timestamp", "employeeId"]
+    }
+  }
+}

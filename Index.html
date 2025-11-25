@@ -13,8 +13,8 @@
             <h1>🏪 Schulkiosk Login</h1>
             <form id="loginForm">
                 <div class="form-group">
-                    <label>E-Mail</label>
-                    <input type="email" id="loginEmail" placeholder="deine@email.de" required>
+                    <label>Benutzername</label>
+                    <input type="text" id="loginUsername" placeholder="dein benutzername" required>
                 </div>
                 <div class="form-group">
                     <label>Passwort</label>
@@ -23,41 +23,6 @@
                 <button type="submit" class="btn btn-primary">Anmelden</button>
                 <div id="loginError" class="error-message"></div>
             </form>
-            <div class="register-link">
-                <p>Noch kein Account? <a href="#" id="showRegister">Registrieren</a></p>
-            </div>
-        </div>
-
-        <!-- Register Screen -->
-        <div class="login-box" id="registerBox" style="display: none;">
-            <h1>Registrierung</h1>
-            <form id="registerForm">
-                <div class="form-group">
-                    <label>Name</label>
-                    <input type="text" id="registerName" placeholder="Max Mustermann" required>
-                </div>
-                <div class="form-group">
-                    <label>E-Mail</label>
-                    <input type="email" id="registerEmail" placeholder="deine@email.de" required>
-                </div>
-                <div class="form-group">
-                    <label>Passwort</label>
-                    <input type="password" id="registerPassword" placeholder="••••••••" required>
-                </div>
-                <div class="form-group">
-                    <label>Rolle</label>
-                    <select id="registerRole" required>
-                        <option value="mitschueler">Mitschüler</option>
-                        <option value="it">IT</option>
-                        <option value="admin">Admin</option>
-                    </select>
-                </div>
-                <button type="submit" class="btn btn-primary">Registrieren</button>
-                <div id="registerError" class="error-message"></div>
-            </form>
-            <div class="register-link">
-                <p><a href="#" id="showLogin">Zurück zum Login</a></p>
-            </div>
         </div>
     </div>
 
@@ -85,6 +50,10 @@
                 <a href="#" class="nav-link" data-view="mitarbeiter" id="navMitarbeiter">
                     <span class="icon">👥</span>
                     <span>Mitarbeiter</span>
+                </a>
+                <a href="#" class="nav-link" data-view="benutzerverwaltung" id="navBenutzerverwaltung">
+                    <span class="icon">👤</span>
+                    <span>Benutzer</span>
                 </a>
                 <a href="#" class="nav-link" data-view="protokoll">
                     <span class="icon">📋</span>
@@ -182,6 +151,31 @@
                 <div id="employeesList" class="employees-list"></div>
             </div>
 
+            <!-- Benutzerverwaltung View (nur Admin) -->
+            <div id="benutzerverwaltungView" class="view">
+                <h2>Benutzerverwaltung</h2>
+                
+                <div class="section">
+                    <h3>Neuen Benutzer erstellen</h3>
+                    <form id="addUserForm" class="product-form">
+                        <input type="text" id="newUsername" placeholder="Benutzername" required>
+                        <input type="password" id="newPassword" placeholder="Passwort" required>
+                        <input type="text" id="newName" placeholder="Vollständiger Name" required>
+                        <select id="newUserRole" required>
+                            <option value="mitschueler">Mitschüler</option>
+                            <option value="it">IT</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                        <button type="submit" class="btn btn-primary">Erstellen</button>
+                    </form>
+                </div>
+
+                <div class="section">
+                    <h3>Alle Benutzer</h3>
+                    <div id="usersList" class="users-list"></div>
+                </div>
+            </div>
+
             <!-- Protokoll View -->
             <div id="protokollView" class="view">
                 <h2>Verkaufsprotokolle</h2>
@@ -192,7 +186,6 @@
 
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
     
     <!-- Custom JS -->
