@@ -63,6 +63,10 @@
                     <span class="icon">📋</span>
                     <span>Protokoll</span>
                 </a>
+                <a href="#" class="nav-link" data-view="einstellungen" id="navEinstellungen">
+                    <span class="icon">⚙️</span>
+                    <span>Einstellungen</span>
+                </a>
             </div>
 
             <div class="sidebar-footer">
@@ -182,19 +186,21 @@
             <!-- Mitarbeiter View -->
             <div id="mitarbeiterView" class="view">
                 <h2>Mitarbeiterverwaltung</h2>
-                <div id="employeesList" class="employees-list"></div>
+                <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px;">
+                    <div id="employeesList" class="employees-list"></div>
+                    <div id="onlineUsersContainer" style="background: var(--bg-secondary); padding: 20px; border-radius: 12px; border: 1px solid var(--border-color); height: fit-content; position: sticky; top: 20px;"></div>
+                </div>
             </div>
 
-            <!-- Benutzerverwaltung View (nur Admin) -->
+            <!-- Benutzerverwaltung View -->
             <div id="benutzerverwaltungView" class="view">
                 <h2>Benutzerverwaltung</h2>
                 
                 <div class="section">
                     <h3>Neuen Benutzer erstellen</h3>
                     <form id="addUserForm" class="product-form">
-                        <input type="text" id="newUsername" placeholder="Benutzername" required>
+                        <input type="text" id="newName" placeholder="Vollständiger Name (z.B. Max Mueller)" required>
                         <input type="password" id="newPassword" placeholder="Passwort" required>
-                        <input type="text" id="newName" placeholder="Vollständiger Name" required>
                         <select id="newUserRole" required>
                             <option value="mitschueler">Mitschüler</option>
                             <option value="it">IT</option>
@@ -210,11 +216,11 @@
                 </div>
             </div>
 
-            <!-- Dienstplan View (nur Admin) -->
+            <!-- Dienstplan View -->
             <div id="dienstplanView" class="view">
                 <h2>Dienstplan</h2>
                 
-                <div class="section">
+                <div class="section" id="dienstplanFormSection" style="display: none;">
                     <h3>Neuen Dienstplan-Eintrag erstellen</h3>
                     <form id="dienstplanForm" class="product-form">
                         <select id="dienstplanDay" required>
@@ -244,7 +250,84 @@
             <!-- Protokoll View -->
             <div id="protokollView" class="view">
                 <h2>Verkaufsprotokolle</h2>
+                
+                <div class="section">
+                    <h3>🔍 Filter</h3>
+                    <div class="filter-grid">
+                        <div>
+                            <label>Nach Typ</label>
+                            <select id="filterType">
+                                <option value="all">Alle</option>
+                                <option value="Verkauf">Verkauf</option>
+                                <option value="Aufstockung">Aufstockung</option>
+                                <option value="Rückgabe">Rückgabe</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label>Nach Datum</label>
+                            <input type="date" id="filterDate">
+                        </div>
+                    </div>
+                </div>
+                
                 <div id="salesLogs" class="logs-table"></div>
+            </div>
+
+            <!-- Einstellungen View -->
+            <div id="einstellungenView" class="view">
+                <h2>⚙️ Einstellungen</h2>
+                
+                <div class="section">
+                    <h3>🔐 Passwort ändern</h3>
+                    <form id="changePasswordForm" class="product-form" style="grid-template-columns: 1fr;">
+                        <input type="password" id="oldPassword" placeholder="Altes Passwort" required>
+                        <input type="password" id="settingsNewPassword" placeholder="Neues Passwort" required>
+                        <input type="password" id="confirmPassword" placeholder="Passwort wiederholen" required>
+                        <button type="submit" class="btn btn-primary">Passwort ändern</button>
+                    </form>
+                </div>
+                
+                <div class="section">
+                    <h3>🎨 Design & Farben</h3>
+                    <div style="display: grid; gap: 16px;">
+                        <div>
+                            <label>Farbschema:</label>
+                            <select id="designSelect" style="width: 100%; padding: 12px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-primary);">
+                                <option value="dark">🌙 Dunkel (Standard)</option>
+                                <option value="light">☀️ Hell</option>
+                                <option value="blue">🔵 Blau</option>
+                                <option value="green">🟢 Grün</option>
+                                <option value="purple">🟣 Lila</option>
+                                <option value="orange">🟠 Orange</option>
+                                <option value="custom">🎨 Benutzerdefiniert</option>
+                            </select>
+                        </div>
+                        
+                        <!-- Benutzerdefinierte Farben - VERSTECKT bis aktiviert -->
+                        <div id="customColorsSection" style="display: none; grid-template-columns: 1fr 1fr; gap: 16px;">
+                            <div>
+                                <label>Hintergrundfarbe:</label>
+                                <input type="color" id="customBackgroundColor" value="#111827" style="width: 100%; height: 50px; border: none; border-radius: 8px; cursor: pointer;">
+                            </div>
+                            <div>
+                                <label>Textfarbe:</label>
+                                <input type="color" id="customTextColor" value="#ffffff" style="width: 100%; height: 50px; border: none; border-radius: 8px; cursor: pointer;">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="section">
+                    <h3>🔤 Schriftgröße</h3>
+                    <div style="display: grid; gap: 12px;">
+                        <label>Größe:</label>
+                        <select id="fontSelect" style="width: 100%; padding: 12px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-primary);">
+                            <option value="small">📝 Klein</option>
+                            <option value="normal">📋 Normal (Standard)</option>
+                            <option value="large">📖 Groß</option>
+                        </select>
+                    </div>
+                </div>
             </div>
         </main>
     </div>
