@@ -77,6 +77,21 @@
                         <p class="user-role" id="userRole">Admin</p>
                     </div>
                 </div>
+                
+                <!-- ✅ NEU: Online Status Anzeige -->
+                <div id="onlineStatusContainer" style="background: var(--bg-tertiary); padding: 12px; border-radius: 8px; margin-bottom: 12px; font-size: 12px;">
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                        <div id="onlineIndicator" style="width: 10px; height: 10px; background: #10b981; border-radius: 50%; animation: pulse 2s infinite;"></div>
+                        <span id="onlineText" style="color: #10b981; font-weight: 600;">Online</span>
+                    </div>
+                    <div style="color: var(--text-secondary);">
+                        📅 Heute: <span id="onlineToday">-</span>
+                    </div>
+                    <div style="color: var(--text-secondary);">
+                        ⏰ Zuletzt: <span id="lastSeen">-</span>
+                    </div>
+                </div>
+                
                 <button class="btn btn-danger" id="logoutBtn">Abmelden</button>
             </div>
         </nav>
