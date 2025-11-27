@@ -724,6 +724,22 @@ body {
     font-size: 14px;
 }
 
+/* Pulsing Animation für Online-Indicator */
+@keyframes pulse {
+    0% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.7;
+        transform: scale(1.2);
+    }
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
 /* Responsive */
 @media (max-width: 1024px) {
     .main-content {
@@ -748,6 +764,11 @@ body {
     .nav-link span:not(.icon),
     .user-info > div {
         display: none;
+    }
+    
+    /* ✅ NEU: Verstecke Online-Status auf Mobile */
+    #onlineStatusContainer {
+        display: none !important;
     }
     
     .main-content {
