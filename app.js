@@ -1,4 +1,4 @@
-// ⚠️ FIREBASE KONFIGURATION
+
 const firebaseConfig = {
     apiKey: "AIzaSyDF2E3Z80yza8pw0YwptnDIZ2Q6CFg0WBg",
     authDomain: "kiosk-c85c3.firebaseapp.com",
@@ -66,7 +66,7 @@ function formatUsernameForStorage(fullName) {
         .trim()
         .toLowerCase()
         .split(' ')
-        .join('_');  // ✅ Unterstriche statt Punkte
+        .join('.');  // ✅ Unterstriche statt Punkte
 }
 
 function formatNameShort(fullName) {
