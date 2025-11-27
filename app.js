@@ -19,6 +19,8 @@ let employees = [];
 let sales = [];
 let allUsers = [];
 let editingUserId = null;
+let onlineUsers = {};
+let editingProductId = null;
 
 // === COOKIE FUNKTIONEN ===
 function setCookie(name, value, days = 7) {
@@ -50,49 +52,110 @@ const mainApp = document.getElementById('mainApp');
 const loginForm = document.getElementById('loginForm');
 const logoutBtn = document.getElementById('logoutBtn');
 
-// === LOGIN ===
+// === HILFSFUNKTION - USERNAME FORMATIEREN ===
+function formatUsernameForId(fullName) {
+    return fullName
+        .trim()
+        .split(' ')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+        .join('');
+}
+
+function formatUsernameForStorage(fullName) {
+    return fullName
+        .trim()
+        .toLowerCase()
+        .split(' ')
+        .join('_');  // ✅ Unterstriche statt Punkte
+}
+
+function formatNameShort(fullName) {
+    const parts = fullName.trim().split(' ');
+    if (parts.length === 2) {
+        return `${parts[0]} ${parts[1].charAt(0)}.`;
+    }
+    return fullName;
+}
+
+// === LOGIN (MIT FIREBASE AUTH) ===
 loginForm.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const username = document.getElementById('loginUsername').value;
+    const usernameInput = document.getElementById('loginUsername').value.toLowerCase().split(' ').join('_');
     const password = document.getElementById('loginPassword').value;
     const errorDiv = document.getElementById('loginError');
     errorDiv.textContent = '';
     
     try {
+        // 1. Suche User mit diesem username in der Datenbank
+        let foundUserId = null;
         const usersSnapshot = await database.ref('users').once('value');
-        let foundUser = null;
         
         usersSnapshot.forEach((child) => {
             const user = child.val();
-            if (user.username === username && user.password === password) {
-                foundUser = {
-                    id: child.key,
-                    username: user.username,
-                    name: user.name,
-                    role: user.role,
-                    createdAt: user.createdAt
-                };
+            // Vergleiche den gespeicherten username mit der Eingabe
+            if (user.username === usernameInput) {
+                foundUserId = child.key;  // Das ist die ID (MaxMueller)
             }
         });
         
-        if (foundUser) {
-            setCookie('currentUser', foundUser, 7);
-            currentUser = foundUser;
-            loginScreen.style.display = 'none';
-            mainApp.style.display = 'flex';
-            updateUserInfo();
-            loadData();
-            updateUIForRole();
-            checkDienstplan();
-        } else {
-            errorDiv.textContent = 'Benutzername oder Passwort falsch!';
+        if (!foundUserId) {
+            errorDiv.textContent = 'Benutzer nicht gefunden!';
+            return;
         }
+        
+        // 2. Hole die Benutzerdaten mit der ID
+        const userRef = database.ref(`users/${foundUserId}`);
+        const snapshot = await userRef.once('value');
+        const user = snapshot.val();
+        
+        if (user.suspended) {
+            errorDiv.textContent = 'Dein Account wurde suspendiert!';
+            return;
+        }
+        
+        if (user.password !== password) {
+            errorDiv.textContent = 'Passwort falsch!';
+            return;
+        }
+        
+        // 3. Login erfolgreich - speichere nur lokal
+        currentUser = {
+            id: foundUserId,  // MaxMueller
+            username: user.username,  // max_mueller
+            name: user.name,
+            role: user.role,
+            createdAt: user.createdAt,
+            lastLogin: Date.now()  // ✅ Timestamp lokal
+        };
+        
+        setCookie('currentUser', currentUser, 7);
+        
+        // Update lastLogin in DB (optional)
+        await database.ref(`users/${foundUserId}`).update({
+            lastLogin: Date.now()
+        }).catch(() => {});
+        
+        loginScreen.style.display = 'none';
+        mainApp.style.display = 'flex';
+        updateUserInfo();
+        loadData();
+        updateUIForRole();
+        checkDienstplan();
+        updateOnlineStatus();
+        loadOnlineUsers();
+        watchUserRoleChanges();
+        initSettings();  // ✅ Einstellungen initialisieren
+        
     } catch (error) {
+        console.error('Login Fehler:', error);
         errorDiv.textContent = 'Fehler beim Login: ' + error.message;
     }
 });
 
-logoutBtn.addEventListener('click', () => {
+logoutBtn.addEventListener('click', async () => {
+    if (currentUser) {
+        database.ref(`onlineUsers/${currentUser.id}`).set({ online: false, lastSeen: Date.now() }).catch(() => {});
+    }
     currentUser = null;
     deleteCookie('currentUser');
     loginScreen.style.display = 'flex';
@@ -111,6 +174,9 @@ window.addEventListener('load', () => {
         loadData();
         updateUIForRole();
         checkDienstplan();
+        updateOnlineStatus();
+        loadOnlineUsers();
+        initSettings();  // ✅ Einstellungen initialisieren
     }
 });
 
@@ -120,24 +186,43 @@ function checkDienstplan() {
     const dayNames = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'];
     const today = dayNames[now.getDay()];
     const hour = now.getHours();
+    const minute = now.getMinutes();
+    const currentTime = hour + minute / 60;  // Aktuelle Uhrzeit als Dezimal
     
     database.ref('dienstplan').once('value', (snapshot) => {
         const dienstplan = snapshot.val();
+        const kassaNav = document.getElementById('navKasse');
+        let hasActiveShift = false;
+        
         if (dienstplan && dienstplan[today]) {
             const dayPlan = dienstplan[today];
-            const userSchedule = dayPlan[currentUser.username];
+            const userSchedule = dayPlan[currentUser.id];
             
             if (userSchedule) {
                 const startHour = parseInt(userSchedule.start.split(':')[0]);
-                const endHour = parseInt(userSchedule.end.split(':')[0]);
+                const startMin = parseInt(userSchedule.start.split(':')[1]);
+                const startTime = startHour + startMin / 60;
                 
-                if (hour < startHour || hour >= endHour) {
-                    document.getElementById('navKasse').style.display = 'none';
-                    alert(`⏰ Du kannst nur von ${userSchedule.start} - ${userSchedule.end} Uhr die Kasse bedienen!`);
+                const endHour = parseInt(userSchedule.end.split(':')[0]);
+                const endMin = parseInt(userSchedule.end.split(':')[1]);
+                const endTime = endHour + endMin / 60;
+                
+                // ✅ Prüfe ob aktuelle Zeit im Dienst ist
+                if (currentTime >= startTime && currentTime < endTime) {
+                    kassaNav.style.display = 'flex';
+                    hasActiveShift = true;
                 } else {
-                    document.getElementById('navKasse').style.display = 'flex';
+                    kassaNav.style.display = 'none';
+                    const minutesUntilShift = Math.round((startTime - currentTime) * 60);
+                    alert(`⏰ Du hast momentan keinen Dienst!\nNächster Dienst: ${userSchedule.start} Uhr`);
                 }
+            } else {
+                kassaNav.style.display = 'none';
+                alert('⏰ Du hast heute keinen Dienst eingetragen!');
             }
+        } else {
+            kassaNav.style.display = 'none';
+            alert('⏰ Für heute ist kein Dienstplan vorhanden!');
         }
     });
 }
@@ -148,7 +233,7 @@ function updateUserInfo() {
     const initials = currentUser.name.split(' ').map(n => n[0]).join('').toUpperCase();
     document.getElementById('userAvatar').textContent = initials;
     document.getElementById('userName').textContent = currentUser.name;
-    document.getElementById('userRole').textContent = currentUser.role;
+    document.getElementById('userRole').textContent = formatRole(currentUser.role);
 }
 
 function updateUIForRole() {
@@ -157,21 +242,27 @@ function updateUIForRole() {
     const navBenutzerverwaltung = document.getElementById('navBenutzerverwaltung');
     const navDienstplan = document.getElementById('navDienstplan');
     
-    if (currentUser.role === 'mitschueler') {
+    const role = currentUser.role;
+    
+    if (role === 'mitschueler') {
         navProdukte.style.display = 'none';
         navMitarbeiter.style.display = 'none';
         navBenutzerverwaltung.style.display = 'none';
-        navDienstplan.style.display = 'none';
-    } else if (currentUser.role === 'it') {
+        navDienstplan.style.display = 'flex';  // ✅ Mitschüler sehen Dienstplan
+    } else if (role === 'it' || role === 'admin') {
         navProdukte.style.display = 'flex';
         navMitarbeiter.style.display = 'flex';
         navBenutzerverwaltung.style.display = 'flex';
         navDienstplan.style.display = 'flex';
-    } else if (currentUser.role === 'admin') {
-        navProdukte.style.display = 'flex';
-        navMitarbeiter.style.display = 'flex';
-        navBenutzerverwaltung.style.display = 'flex';
-        navDienstplan.style.display = 'flex';
+    }
+
+    const dienstplanFormSection = document.getElementById('dienstplanFormSection');
+    if (dienstplanFormSection) {
+        if (role === 'admin' || role === 'it') {  // ✅ Nur Admin/IT können bearbeiten
+            dienstplanFormSection.style.display = 'block';
+        } else {
+            dienstplanFormSection.style.display = 'none';
+        }
     }
 }
 
@@ -197,6 +288,63 @@ document.querySelectorAll('.nav-link').forEach(link => {
     });
 });
 
+// === PROTOKOLL MIT FILTER ===
+function renderSalesLogs() {
+    const container = document.getElementById('salesLogs');
+    if (!container) return;
+    
+    const filterType = document.getElementById('filterType')?.value || 'all';
+    const filterDate = document.getElementById('filterDate')?.value || '';
+    
+    let filteredLogs = sales;
+    
+    // Nach Typ filtern
+    if (filterType !== 'all') {
+        filteredLogs = filteredLogs.filter(sale => sale.type === filterType);
+    }
+    
+    // Nach Datum filtern
+    if (filterDate) {
+        const selectedDate = new Date(filterDate).setHours(0, 0, 0, 0);
+        filteredLogs = filteredLogs.filter(sale => {
+            const saleDate = new Date(sale.date || sale.timestamp).setHours(0, 0, 0, 0);
+            return saleDate === selectedDate;
+        });
+    }
+    
+    container.innerHTML = '';
+    if (filteredLogs.length === 0) {
+        container.innerHTML = '<p style="text-align: center; color: var(--text-secondary); padding: 40px;">Keine Einträge gefunden</p>';
+        return;
+    }
+    
+    filteredLogs.forEach(sale => {
+        container.innerHTML += createLogItem(sale);
+    });
+}
+
+// Event Listener für Filter
+document.getElementById('filterType')?.addEventListener('change', renderSalesLogs);
+document.getElementById('filterDate')?.addEventListener('change', renderSalesLogs);
+
+function createLogItem(sale) {
+    const date = new Date(sale.date || sale.timestamp);
+    const formattedDate = date.toLocaleString('de-DE');
+    const total = sale.total || 0;
+    const change = sale.change ? `(Wechsel: ${sale.change.toFixed(2)}€)` : '';
+    
+    return `
+        <div class="log-item">
+            <div class="log-date">${formattedDate}</div>
+            <div>
+                <div class="log-type">${sale.type || 'Verkauf'}</div>
+                <div style="font-size: 14px; color: #9ca3af;">Mitarbeiter: ${sale.employee || 'Unbekannt'}</div>
+            </div>
+            <div class="log-amount">${total.toFixed(2)}€ ${change}</div>
+        </div>
+    `;
+}
+
 // === DATEN LADEN ===
 
 function loadData() {
@@ -221,7 +369,7 @@ function loadData() {
                 id: child.key,
                 ...user
             });
-            if (user.role !== 'admin') {
+            if (normalizeRole(user.role) !== 'admin' && !user.suspended) {
                 employees.push({
                     id: child.key,
                     ...user
@@ -229,14 +377,14 @@ function loadData() {
             }
         });
         
-        // Update Employee Dropdown
+        // Update Employee Dropdown - verwende emp.id statt emp.username
         const select = document.getElementById('dienstplanEmployee');
         if (select) {
             const currentValue = select.value;
             select.innerHTML = '<option value="">Mitarbeiter auswählen</option>';
             employees.forEach(emp => {
                 const opt = document.createElement('option');
-                opt.value = emp.username;
+                opt.value = emp.id;  // ✅ Verwende emp.id (MaxMueller)
                 opt.textContent = emp.name;
                 select.appendChild(opt);
             });
@@ -261,51 +409,73 @@ function loadData() {
     });
 }
 
-// === BENUTZERVERWALTUNG ===
+// === HILFSFUNKTION FÜR ROLLENFORMATIERUNG ===
+function formatRole(role) {
+    const roleMap = {
+        'mitschueler': 'Mitschüler',
+        'it': 'IT',
+        'admin': 'Admin'
+    };
+    return roleMap[role?.toLowerCase()] || role;
+}
+
+function normalizeRole(role) {
+    return role?.toLowerCase() || '';
+}
+
+// === BENUTZERVERWALTUNG - NUR ADMIN ODER IT KANN ERSTELLEN ===
 document.getElementById('addUserForm').addEventListener('submit', async (e) => {
     e.preventDefault();
-    console.log(currentUser.role)
-    if (currentUser.role !== 'admin' && currentUser.role !== 'it') {
-        alert('Keine Berechtigung!');
+    const userRole = normalizeRole(currentUser.role);
+    
+    if (userRole !== 'admin' && userRole !== 'it') {  // ✅ IT eingeschlossen
+        alert('Nur Admins können neue Benutzer erstellen!');
         return;
     }
     
-    const username = document.getElementById('newUsername').value;
+    const fullName = document.getElementById('newName').value.trim();
     const password = document.getElementById('newPassword').value;
-    const name = document.getElementById('newName').value;
-    const role = document.getElementById('newUserRole').value;
+    const role = normalizeRole(document.getElementById('newUserRole').value);
+    
+    const userId = formatUsernameForId(fullName);
+    const username = formatUsernameForStorage(fullName);
+    const nameShort = formatNameShort(fullName);
+    
+    if (!fullName || !password || !role) {
+        alert('Bitte alle Felder ausfüllen!');
+        return;
+    }
     
     try {
-        const usersSnapshot = await database.ref('users').once('value');
-        let exists = false;
+        const userRef = database.ref(`users/${userId}`);
+        const snapshot = await userRef.once('value');
         
-        usersSnapshot.forEach((child) => {
-            if (child.val().username === username && child.key !== editingUserId) {
-                exists = true;
-            }
-        });
-        
-        if (exists) {
-            alert('Benutzername existiert bereits!');
+        if (snapshot.exists()) {
+            alert('Benutzer existiert bereits!');
             return;
         }
         
         if (editingUserId) {
-            await database.ref('users/' + editingUserId).update({
-                username: username,
+            // Update
+            await userRef.update({
                 password: password,
-                name: name,
-                role: role
+                name: nameShort,
+                role: role,
+                updatedAt: Date.now(),
+                updatedBy: currentUser.id
             });
             alert('Benutzer aktualisiert!');
             editingUserId = null;
             document.querySelector('#addUserForm .btn').textContent = 'Erstellen';
+            document.getElementById('newName').disabled = false;
         } else {
-            await database.ref('users').push({
+            // Create
+            await userRef.set({
                 username: username,
                 password: password,
-                name: name,
+                name: nameShort,
                 role: role,
+                suspended: false,
                 createdAt: Date.now(),
                 createdBy: currentUser.id
             });
@@ -322,20 +492,29 @@ function renderUsersList() {
     const list = document.getElementById('usersList');
     list.innerHTML = '';
     
+    const userRole = normalizeRole(currentUser.role);
+    
     allUsers.forEach(user => {
         const initials = user.name.split(' ').map(n => n[0]).join('').toUpperCase();
         const card = document.createElement('div');
         card.className = 'user-item';
+        
+        const suspendedText = user.suspended ? '⛔ SUSPENDIERT' : '✓ Aktiv';
+        const suspendedStyle = user.suspended ? 'color: var(--accent-red);' : 'color: var(--accent-green);';
+        
         card.innerHTML = `
             <div class="user-avatar-small">${initials}</div>
             <div class="user-info-item">
-                <div class="user-username">${user.username}</div>
-                <div class="user-name-small">${user.name}</div>
-                <div class="user-role-badge">${user.role}</div>
+                <div class="user-username">${user.name}</div>
+                <div class="user-name-small">@${user.username}</div>
+                <div class="user-role-badge">${formatRole(user.role)}</div>
             </div>
+            <div style="${suspendedStyle}; font-weight: 600;">${suspendedText}</div>
             <div class="user-actions">
-                <button class="icon-btn edit" onclick="editUser('${user.id}')">✏️</button>
-                <button class="icon-btn delete" onclick="deleteUser('${user.id}')">🗑️</button>
+                ${userRole === 'admin' || userRole === 'it' ? `  <!-- ✅ IT eingeschlossen -->
+                    <button class="icon-btn edit" onclick="editUser('${user.id}')">✏️</button>
+                    <button class="icon-btn delete" onclick="deleteUser('${user.id}')">🗑️</button>
+                ` : ''}
             </div>
         `;
         list.appendChild(card);
@@ -343,8 +522,9 @@ function renderUsersList() {
 }
 
 function editUser(userId) {
-    if (currentUser.role !== 'admin' && currentUser.role !== 'it') {
-        alert('Keine Berechtigung!');
+    const userRole = normalizeRole(currentUser.role);
+    if (userRole !== 'admin' && userRole !== 'it') {  // ✅ IT eingeschlossen
+        alert('Nur Admins können Benutzer bearbeiten!');
         return;
     }
     
@@ -352,18 +532,19 @@ function editUser(userId) {
     if (!user) return;
     
     editingUserId = userId;
-    document.getElementById('newUsername').value = user.username;
-    document.getElementById('newPassword').value = user.password;
     document.getElementById('newName').value = user.name;
-    document.getElementById('newUserRole').value = user.role;
+    document.getElementById('newName').disabled = true;
+    document.getElementById('newPassword').value = user.password;
+    document.getElementById('newUserRole').value = normalizeRole(user.role);
     document.querySelector('#addUserForm .btn').textContent = 'Aktualisieren';
     
     document.getElementById('addUserForm').scrollIntoView({ behavior: 'smooth' });
 }
 
 async function deleteUser(userId) {
-    if (currentUser.role !== 'admin' && currentUser.role !== 'it') {
-        alert('Keine Berechtigung!');
+    const userRole = normalizeRole(currentUser.role);
+    if (userRole !== 'admin' && userRole !== 'it') {  // ✅ IT eingeschlossen
+        alert('Nur Admins können Benutzer löschen!');
         return;
     }
     
@@ -374,30 +555,60 @@ async function deleteUser(userId) {
     
     if (confirm('Benutzer wirklich löschen?')) {
         try {
-            await database.ref('users/' + userId).remove();
+            await database.ref(`users/${userId}`).remove();
             alert('Benutzer gelöscht!');
+            editingUserId = null;
+            document.querySelector('#addUserForm .btn').textContent = 'Erstellen';
+            document.getElementById('newName').disabled = false;
         } catch (error) {
             alert('Fehler: ' + error.message);
         }
     }
 }
 
+// === LIVE-UPDATE FÜR ROLLENÄNDERUNGEN ===
+function watchUserRoleChanges() {
+    if (!currentUser) return;
+    
+    database.ref(`users/${currentUser.id}`).on('value', (snapshot) => {
+        const userData = snapshot.val();
+        if (userData) {
+            const oldRole = currentUser.role;
+            currentUser.role = userData.role;  // ✅ Aktuelle Rolle speichern
+            
+            // Wenn Rolle geändert wurde
+            if (userData.role !== oldRole) {
+                setCookie('currentUser', currentUser, 7);
+                updateUserInfo();
+                updateUIForRole();
+                loadData();
+                alert(`✅ Deine Rolle wurde aktualisiert: ${formatRole(userData.role)}`);
+            }
+        }
+    });
+}
+
 // === DIENSTPLAN ===
 document.getElementById('dienstplanForm')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     
-    if (currentUser.role !== 'admin') {
+    if (normalizeRole(currentUser.role) !== 'admin' && normalizeRole(currentUser.role) !== 'it') {  // ✅ IT eingeschlossen
         alert('Keine Berechtigung!');
         return;
     }
     
     const day = document.getElementById('dienstplanDay').value;
-    const employee = document.getElementById('dienstplanEmployee').value;
+    const employee = document.getElementById('dienstplanEmployee').value;  // ✅ Das ist jetzt die ID (MaxMueller)
     const start = document.getElementById('dienstplanStart').value;
     const end = document.getElementById('dienstplanEnd').value;
     
+    if (!day || !employee || !start || !end) {
+        alert('Bitte alle Felder ausfüllen!');
+        return;
+    }
+    
     try {
-        const planRef = database.ref(`dienstplan/${day}/${employee}`);
+        const planRef = database.ref(`dienstplan/${day}/${employee}`);  // ✅ Verwende employee (ID)
         await planRef.set({
             start: start,
             end: end
@@ -414,9 +625,17 @@ function renderDienstplan() {
     const list = document.getElementById('dienstplanList');
     if (!list) return;
     
+    const userRole = normalizeRole(currentUser.role);
+    const isEditMode = userRole === 'admin' || userRole === 'it';  // ✅ Nur Admin/IT können bearbeiten
+    
     database.ref('dienstplan').once('value', (snapshot) => {
         const dienstplan = snapshot.val() || {};
         list.innerHTML = '';
+        
+        if (Object.keys(dienstplan).length === 0) {
+            list.innerHTML = '<p style="color: var(--text-secondary); text-align: center; padding: 40px;">Kein Dienstplan vorhanden</p>';
+            return;
+        }
         
         Object.entries(dienstplan).forEach(([day, workers]) => {
             const dayDiv = document.createElement('div');
@@ -425,18 +644,37 @@ function renderDienstplan() {
             dayDiv.style.paddingLeft = '16px';
             dayDiv.innerHTML = `<h4>${day}</h4>`;
             
-            Object.entries(workers).forEach(([worker, schedule]) => {
-                const workerDiv = document.createElement('div');
-                workerDiv.className = 'dienstplan-item';
-                workerDiv.innerHTML = `
-                    <div>${worker}</div>
-                    <div>${schedule.start} - ${schedule.end}</div>
-                    <button onclick="deleteDienstplan('${day}', '${worker}')" class="icon-btn delete">🗑️</button>
-                `;
-                dayDiv.appendChild(workerDiv);
-            });
+            // ✅ Zeige nur den eigenen Dienst für Mitschüler
+            if (userRole === 'mitschueler') {
+                const userSchedule = workers[currentUser.id];
+                if (userSchedule) {
+                    const workerDiv = document.createElement('div');
+                    workerDiv.className = 'dienstplan-item';
+                    workerDiv.innerHTML = `
+                        <div>${currentUser.name} (Du)</div>
+                        <div>${userSchedule.start} - ${userSchedule.end}</div>
+                    `;
+                    dayDiv.appendChild(workerDiv);
+                }
+            } else {
+                // Admin/IT sehen alle und können bearbeiten
+                Object.entries(workers).forEach(([worker, schedule]) => {
+                    const workerDiv = document.createElement('div');
+                    workerDiv.className = 'dienstplan-item';
+                    const deleteBtn = isEditMode ? `<button onclick="deleteDienstplan('${day}', '${worker}')" class="icon-btn delete">🗑️</button>` : '';
+                    workerDiv.innerHTML = `
+                        <div>${worker}</div>
+                        <div>${schedule.start} - ${schedule.end}</div>
+                        ${deleteBtn}
+                    `;
+                    dayDiv.appendChild(workerDiv);
+                });
+            }
             
-            list.appendChild(dayDiv);
+            // Nur Einträge hinzufügen wenn es etwas zu zeigen gibt
+            if (dayDiv.children.length > 1) {
+                list.appendChild(dayDiv);
+            }
         });
     });
 }
@@ -646,24 +884,33 @@ document.getElementById('cancelPaymentBtn')?.addEventListener('click', () => {
 document.getElementById('addProductForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     
-    if (currentUser.role === 'mitschueler') {
+    if (normalizeRole(currentUser.role) === 'mitschueler') {
         alert('Keine Berechtigung!');
         return;
     }
     
-    const product = {
+    const productData = {
         name: document.getElementById('productName').value,
         price: parseFloat(document.getElementById('productPrice').value),
         stock: parseInt(document.getElementById('productStock').value),
-        category: document.getElementById('productCategory').value,
-        createdAt: Date.now(),
-        createdBy: currentUser.id
+        category: document.getElementById('productCategory').value
     };
     
     try {
-        await database.ref('products').push(product);
+        if (editingProductId) {
+            await database.ref('products/' + editingProductId).update(productData);
+            alert('Produkt aktualisiert!');
+            editingProductId = null;
+            document.querySelector('#addProductForm .btn').textContent = 'Hinzufügen';
+        } else {
+            await database.ref('products').push({
+                ...productData,
+                createdAt: Date.now(),
+                createdBy: currentUser.id
+            });
+            alert('Produkt hinzugefügt!');
+        }
         e.target.reset();
-        alert('Produkt hinzugefügt!');
     } catch (error) {
         alert('Fehler: ' + error.message);
     }
@@ -682,6 +929,7 @@ function renderProductsList() {
             <div>Lager: ${product.stock}</div>
             <div>${product.category}</div>
             <div class="product-actions">
+                <button class="icon-btn edit" onclick="editProduct('${product.id}')">✏️</button>
                 <button class="icon-btn delete" onclick="deleteProduct('${product.id}')">🗑️</button>
             </div>
         `;
@@ -689,8 +937,27 @@ function renderProductsList() {
     });
 }
 
+function editProduct(productId) {
+    if (normalizeRole(currentUser.role) === 'mitschueler') {
+        alert('Keine Berechtigung!');
+        return;
+    }
+    
+    const product = products.find(p => p.id === productId);
+    if (!product) return;
+    
+    editingProductId = productId;
+    document.getElementById('productName').value = product.name;
+    document.getElementById('productPrice').value = product.price;
+    document.getElementById('productStock').value = product.stock;
+    document.getElementById('productCategory').value = product.category;
+    document.querySelector('#addProductForm .btn').textContent = 'Aktualisieren';
+    
+    document.getElementById('addProductForm').scrollIntoView({ behavior: 'smooth' });
+}
+
 async function deleteProduct(productId) {
-    if (currentUser.role === 'mitschueler') {
+    if (normalizeRole(currentUser.role) === 'mitschueler') {
         alert('Keine Berechtigung!');
         return;
     }
@@ -715,54 +982,138 @@ function renderEmployees() {
         const initials = employee.name.split(' ').map(n => n[0]).join('').toUpperCase();
         const card = document.createElement('div');
         card.className = 'employee-card';
+        const suspendedText = employee.suspended ? '⛔ SUSPENDIERT' : '✓ Aktiv';
+        const suspendedStyle = employee.suspended ? 'color: var(--accent-red); font-weight: 700;' : 'color: var(--accent-green);';
+        
         card.innerHTML = `
             <div class="employee-avatar">${initials}</div>
             <div class="employee-info">
                 <div class="employee-name">${employee.name}</div>
-                <div class="employee-role">${employee.role}</div>
+                <div class="employee-role">${formatRole(employee.role)}</div>
                 <div style="color: #9ca3af; font-size: 14px;">@${employee.username}</div>
             </div>
+            <div style="${suspendedStyle}">${suspendedText}</div>
         `;
+        
+        const userRole = normalizeRole(currentUser.role);
+        if (userRole === 'admin' || userRole === 'it') {
+            const actionBtn = document.createElement('button');
+            actionBtn.className = 'icon-btn';
+            actionBtn.style.background = employee.suspended ? 'var(--accent-green)' : 'var(--accent-red)';
+            actionBtn.textContent = employee.suspended ? '✓' : '🚫';
+            actionBtn.onclick = () => toggleEmployeeSuspend(employee.id, !employee.suspended);
+            card.appendChild(actionBtn);
+        }
+        
         list.appendChild(card);
     });
 }
 
-// === VERKAUFSPROTOKOLLE ===
-
-function renderSalesLogs() {
-    const container = document.getElementById('salesLogs');
-    const recentLogs = document.getElementById('recentLogs');
-    
-    if (container) {
-        container.innerHTML = '';
-        sales.forEach(sale => {
-            container.innerHTML += createLogItem(sale);
-        });
+async function toggleEmployeeSuspend(userId, suspend) {
+    const userRole = normalizeRole(currentUser.role);
+    if (userRole !== 'admin' && userRole !== 'it') {
+        alert('Keine Berechtigung!');
+        return;
     }
     
-    if (recentLogs) {
-        recentLogs.innerHTML = '';
-        sales.slice(0, 10).reverse().forEach(sale => {
-            recentLogs.innerHTML += createLogItem(sale);
-        });
+    const action = suspend ? 'suspendieren' : 'freischalten';
+    if (confirm(`Mitarbeiter ${action}?`)) {
+        try {
+            await database.ref('users/' + userId).update({
+                suspended: suspend
+            });
+            alert(`Mitarbeiter ${action === 'suspendieren' ? 'suspendiert' : 'freigeschalten'}!`);
+        } catch (error) {
+            alert('Fehler: ' + error.message);
+        }
     }
 }
 
-function createLogItem(sale) {
-    const date = new Date(sale.date || sale.timestamp);
-    const formattedDate = date.toLocaleString('de-DE');
-    const change = sale.change ? `(Wechsel: ${sale.change.toFixed(2)}€)` : '';
+// === ONLINE STATUS TRACKING ===
+function updateOnlineStatus() {
+    if (!currentUser) return;
     
-    return `
-        <div class="log-item">
-            <div class="log-date">${formattedDate}</div>
-            <div>
-                <div class="log-type">${sale.type || 'Verkauf'}</div>
-                <div style="font-size: 14px; color: #9ca3af;">Mitarbeiter: ${sale.employee}</div>
-            </div>
-            <div class="log-amount">${sale.total.toFixed(2)}€ ${change}</div>
-        </div>
-    `;
+    const userRef = database.ref(`onlineUsers/${currentUser.id}`);
+    
+    // ✅ Funktion zum Online-Status setzen
+    const setOnlineStatus = (isOnline) => {
+        const now = Date.now();
+        userRef.set({
+            name: currentUser.name,
+            username: currentUser.username,
+            role: currentUser.role,
+            lastSeen: now,
+            online: isOnline,
+            lastSeenFormatted: new Date(now).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
+        }).catch(() => {});
+        
+        // Update UI wenn online
+        if (isOnline) {
+            updateOnlineStatusUI();
+        }
+    };
+    
+    // Initial: Setze user als online
+    setOnlineStatus(true);
+    
+    // Update UI alle 10 Sekunden
+    const uiUpdateInterval = setInterval(() => {
+        if (currentUser) {
+            updateOnlineStatusUI();
+        } else {
+            clearInterval(uiUpdateInterval);
+        }
+    }, 10000);
+    
+    // ✅ ZUVERLÄSSIGER: Multiple Events für Offline
+    const goOffline = () => {
+        setOnlineStatus(false);
+        clearInterval(uiUpdateInterval);
+    };
+    
+    // 1. Wenn Tab/Fenster geschlossen wird
+    window.addEventListener('beforeunload', goOffline);
+    
+    // 2. Wenn Seite verlassen wird (zuverlässiger)
+    window.addEventListener('pagehide', goOffline);
+    
+    // 3. Wenn Seite nicht sichtbar ist (Tab im Hintergrund)
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+            goOffline();
+        } else if (currentUser) {
+            setOnlineStatus(true);
+        }
+    });
+    
+    // 4. Bei Logout
+    logoutBtn.addEventListener('click', goOffline);
+}
+
+// ✅ NEU: UI für Online-Status aktualisieren
+function updateOnlineStatusUI() {
+    const indicator = document.getElementById('onlineIndicator');
+    const statusText = document.getElementById('onlineText');
+    const lastSeenEl = document.getElementById('lastSeen');
+    const onlineTodayEl = document.getElementById('onlineToday');
+    
+    if (indicator && statusText) {
+        indicator.style.background = '#10b981';
+        statusText.textContent = 'Online';
+        statusText.style.color = '#10b981';
+    }
+    
+    // Hole aktuelle Zeit
+    const now = new Date();
+    const timeString = now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+    const dateString = now.toLocaleDateString('de-DE', { month: '2-digit', day: '2-digit' });
+    
+    if (lastSeenEl) {
+        lastSeenEl.textContent = timeString;
+    }
+    if (onlineTodayEl) {
+        onlineTodayEl.textContent = dateString;
+    }
 }
 
 // === DASHBOARD ===
@@ -782,10 +1133,201 @@ function updateDashboard() {
     document.getElementById('statEmployees').textContent = employeeCount;
 }
 
-// === GLOBAL FUNCTIONS ===
-window.updateCartQuantity = updateCartQuantity;
-window.removeFromCart = removeFromCart;
-window.deleteProduct = deleteProduct;
-window.deleteUser = deleteUser;
-window.editUser = editUser;
-window.deleteDienstplan = deleteDienstplan;
+// === EINSTELLUNGEN ===
+function initSettings() {
+    // Passwort ändern - BEHOBEN: settingsNewPassword statt newPassword
+    document.getElementById('changePasswordForm')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const oldPassword = document.getElementById('oldPassword').value;
+        const newPassword = document.getElementById('settingsNewPassword').value;  // ✅ BEHOBEN
+        const confirmPassword = document.getElementById('confirmPassword').value;
+        
+        if (newPassword !== confirmPassword) {
+            alert('Passwörter stimmen nicht überein!');
+            return;
+        }
+        
+        if (newPassword.length < 6) {
+            alert('Passwort muss mindestens 6 Zeichen lang sein!');
+            return;
+        }
+        
+        try {
+            const userSnapshot = await database.ref(`users/${currentUser.id}`).once('value');
+            const user = userSnapshot.val();
+            
+            if (user.password !== oldPassword) {
+                alert('Altes Passwort falsch!');
+                return;
+            }
+            
+            await database.ref(`users/${currentUser.id}`).update({
+                password: newPassword
+            });
+            
+            alert('✅ Passwort erfolgreich geändert!');
+            document.getElementById('changePasswordForm').reset();
+        } catch (error) {
+            alert('Fehler: ' + error.message);
+        }
+    });
+    
+    // Design-Einstellungen - ERWEITERT
+    document.getElementById('designSelect')?.addEventListener('change', (e) => {
+        const design = e.target.value;
+        localStorage.setItem('design', design);
+        
+        // Zeige/Verberge Custom Color Section
+        const customSection = document.getElementById('customColorsSection');
+        if (design === 'custom' && customSection) {
+            customSection.style.display = 'grid';
+        } else if (customSection) {
+            customSection.style.display = 'none';
+        }
+        
+        applyDesign(design);
+    });
+    
+    // Custom Farben Live Preview
+    document.getElementById('customBackgroundColor')?.addEventListener('input', () => {
+        applyDesign('custom');
+    });
+    document.getElementById('customTextColor')?.addEventListener('input', () => {
+        applyDesign('custom');
+    });
+    
+    // Font-Einstellungen
+    document.getElementById('fontSelect')?.addEventListener('change', (e) => {
+        const font = e.target.value;
+        localStorage.setItem('fontSize', font);
+        applyFontSize(font);
+    });
+}
+
+function applyDesign(design) {
+    const root = document.documentElement;
+    
+    if (design === 'dark') {
+        root.style.setProperty('--bg-dark', '#111827');
+        root.style.setProperty('--bg-secondary', '#1f2937');
+        root.style.setProperty('--bg-tertiary', '#374151');
+        root.style.setProperty('--text-primary', '#ffffff');
+        root.style.setProperty('--text-secondary', '#9ca3af');
+    } else if (design === 'light') {
+        root.style.setProperty('--bg-dark', '#f9fafb');
+        root.style.setProperty('--bg-secondary', '#f3f4f6');
+        root.style.setProperty('--bg-tertiary', '#e5e7eb');
+        root.style.setProperty('--text-primary', '#111827');
+        root.style.setProperty('--text-secondary', '#6b7280');
+    } else if (design === 'blue') {
+        root.style.setProperty('--bg-dark', '#0f172a');
+        root.style.setProperty('--bg-secondary', '#1e293b');
+        root.style.setProperty('--bg-tertiary', '#334155');
+        root.style.setProperty('--text-primary', '#ffffff');
+        root.style.setProperty('--text-secondary', '#cbd5e1');
+        root.style.setProperty('--accent-blue', '#0ea5e9');
+        root.style.setProperty('--accent-blue-hover', '#0284c7');
+    } else if (design === 'green') {  // ✅ NEU
+        root.style.setProperty('--bg-dark', '#051c15');
+        root.style.setProperty('--bg-secondary', '#0d3d2c');
+        root.style.setProperty('--bg-tertiary', '#1b4d3d');
+        root.style.setProperty('--text-primary', '#f0fdf4');
+        root.style.setProperty('--text-secondary', '#b0e0d0');
+        root.style.setProperty('--accent-green', '#10b981');
+    } else if (design === 'purple') {  // ✅ NEU
+        root.style.setProperty('--bg-dark', '#2d1b4e');
+        root.style.setProperty('--bg-secondary', '#3d2463');
+        root.style.setProperty('--bg-tertiary', '#4d2a7a');
+        root.style.setProperty('--text-primary', '#faf5ff');
+        root.style.setProperty('--text-secondary', '#e9d5ff');
+        root.style.setProperty('--accent-blue', '#a855f7');
+        root.style.setProperty('--accent-blue-hover', '#9333ea');
+    } else if (design === 'orange') {  // ✅ NEU
+        root.style.setProperty('--bg-dark', '#431407');
+        root.style.setProperty('--bg-secondary', '#5a2e1a');
+        root.style.setProperty('--bg-tertiary', '#7c3a1d');
+        root.style.setProperty('--text-primary', '#fef3c7');
+        root.style.setProperty('--text-secondary', '#fdd699');
+        root.style.setProperty('--accent-blue', '#f97316');
+        root.style.setProperty('--accent-blue-hover', '#ea580c');
+    } else if (design === 'custom') {  // ✅ NEU - Benutzerdefiniert
+        const customBg = document.getElementById('customBackgroundColor')?.value || '#111827';
+        const customText = document.getElementById('customTextColor')?.value || '#ffffff';
+        root.style.setProperty('--bg-dark', customBg);
+        root.style.setProperty('--bg-secondary', customBg);
+        root.style.setProperty('--text-primary', customText);
+    }
+}
+
+function applyFontSize(size) {
+    const root = document.documentElement;
+    
+    if (size === 'small') {
+        root.style.fontSize = '14px';
+    } else if (size === 'normal') {
+        root.style.fontSize = '16px';
+    } else if (size === 'large') {
+        root.style.fontSize = '18px';
+    }
+}
+
+// Beim Laden: Zeige Custom Section wenn gespeichert
+window.addEventListener('load', () => {
+    const design = localStorage.getItem('design') || 'dark';
+    const font = localStorage.getItem('fontSize') || 'normal';
+    
+    applyDesign(design);
+    applyFontSize(font);
+    
+    if (document.getElementById('designSelect')) {
+        document.getElementById('designSelect').value = design;
+        
+        // Zeige Custom Section wenn nötig
+        const customSection = document.getElementById('customColorsSection');
+        if (design === 'custom' && customSection) {
+            customSection.style.display = 'grid';
+        }
+    }
+    if (document.getElementById('fontSelect')) {
+        document.getElementById('fontSelect').value = font;
+    }
+});
+
+function updateOnlineUsersDisplay() {
+    const userRole = normalizeRole(currentUser.role);
+    if (userRole !== 'admin' && userRole !== 'it') return;
+    
+    const container = document.getElementById('onlineUsersContainer');
+    if (!container) return;
+    
+    container.innerHTML = '<h4 style="margin-bottom: 12px;">🟢 Online Mitarbeiter</h4>';
+    
+    // ✅ BEHOBEN: Zeige alle Online-User mit Status
+    if (Object.keys(onlineUsers).length === 0) {
+        container.innerHTML += '<p style="color: var(--text-secondary); font-size: 12px;">Niemand online</p>';
+        return;
+    }
+    
+    Object.entries(onlineUsers).forEach(([userId, user]) => {
+        const isOnline = user.online;
+        const onlineStatus = isOnline ? '🟢 Online' : '⚫ Offline';
+        const onlineColor = isOnline ? '#10b981' : '#9ca3af';
+        const lastSeenTime = user.lastSeenFormatted || new Date(user.lastSeen).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+        
+        const div = document.createElement('div');
+        div.style.cssText = `background: var(--bg-tertiary); padding: 12px; border-radius: 8px; margin-bottom: 8px; border-left: 3px solid ${onlineColor};`;
+        div.innerHTML = `
+            <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+                <div style="width: 8px; height: 8px; background: ${onlineColor}; border-radius: 50%;"></div>
+                <div style="font-weight: 600; margin-bottom: 2px;">${user.name}</div>
+            </div>
+            <div style="font-size: 11px; color: var(--text-secondary); margin-left: 14px;">
+                @${user.username}
+            </div>
+            <div style="font-size: 11px; color: var(--text-secondary); margin-left: 14px; margin-top: 4px;">
+                ${onlineStatus} • ${lastSeenTime}
+            </div>
+        `;
+        container.appendChild(div);
+    });
+}
