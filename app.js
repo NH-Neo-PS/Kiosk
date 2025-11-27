@@ -142,7 +142,6 @@ loginForm.addEventListener('submit', async (e) => {
         updateUIForRole();
         checkDienstplan();
         updateOnlineStatus();
-        loadOnlineUsers();
         watchUserRoleChanges();
         initSettings();  // ✅ Einstellungen initialisieren
         
@@ -175,7 +174,6 @@ window.addEventListener('load', () => {
         updateUIForRole();
         checkDienstplan();
         updateOnlineStatus();
-        loadOnlineUsers();
         initSettings();  // ✅ Einstellungen initialisieren
     }
 });
