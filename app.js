@@ -165,8 +165,8 @@ function updateUIForRole() {
     } else if (currentUser.role === 'it') {
         navProdukte.style.display = 'flex';
         navMitarbeiter.style.display = 'flex';
-        navBenutzerverwaltung.style.display = 'none';
-        navDienstplan.style.display = 'none';
+        navBenutzerverwaltung.style.display = 'flex';
+        navDienstplan.style.display = 'flex';
     } else if (currentUser.role === 'admin') {
         navProdukte.style.display = 'flex';
         navMitarbeiter.style.display = 'flex';
@@ -264,7 +264,7 @@ function loadData() {
 // === BENUTZERVERWALTUNG ===
 document.getElementById('addUserForm').addEventListener('submit', async (e) => {
     e.preventDefault();
-    
+    console.log(currentUser.role)
     if (currentUser.role !== 'admin' && currentUser.role !== 'it') {
         alert('Keine Berechtigung!');
         return;
