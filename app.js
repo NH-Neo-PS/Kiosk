@@ -1,4 +1,3 @@
-
 const firebaseConfig = {
     apiKey: "AIzaSyDF2E3Z80yza8pw0YwptnDIZ2Q6CFg0WBg",
     authDomain: "kiosk-c85c3.firebaseapp.com",
@@ -19,8 +18,8 @@ let employees = [];
 let sales = [];
 let allUsers = [];
 let editingUserId = null;
-let onlineUsers = {};
 let editingProductId = null;
+let currentWeekView = null;
 
 // === COOKIE FUNKTIONEN ===
 function setCookie(name, value, days = 7) {
@@ -66,7 +65,7 @@ function formatUsernameForStorage(fullName) {
         .trim()
         .toLowerCase()
         .split(' ')
-        .join('.');  // ✅ Unterstriche statt Punkte
+        .join('_');
 }
 
 function formatNameShort(fullName) {
@@ -79,11 +78,18 @@ function formatNameShort(fullName) {
 
 // === LOGIN (MIT FIREBASE AUTH) ===
 loginForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const usernameInput = document.getElementById('loginUsername').value.toLowerCase().split(' ').join('_');
+e.preventDefault();
+    // Automatisch alles klein schreiben und Leerzeichen zu Unterstrichen
+    const usernameInput = document.getElementById('loginUsername').value
+        .toLowerCase()
+        .trim()
+        .replace(/\s+/g, '_');  // Leerzeichen zu _
     const password = document.getElementById('loginPassword').value;
     const errorDiv = document.getElementById('loginError');
     errorDiv.textContent = '';
+    
+    // Input-Feld automatisch aktualisieren (visuelles Feedback)
+    document.getElementById('loginUsername').value = usernameInput;
     
     try {
         // 1. Suche User mit diesem username in der Datenbank
@@ -92,9 +98,8 @@ loginForm.addEventListener('submit', async (e) => {
         
         usersSnapshot.forEach((child) => {
             const user = child.val();
-            // Vergleiche den gespeicherten username mit der Eingabe
             if (user.username === usernameInput) {
-                foundUserId = child.key;  // Das ist die ID (MaxMueller)
+                foundUserId = child.key;
             }
         });
         
@@ -120,17 +125,17 @@ loginForm.addEventListener('submit', async (e) => {
         
         // 3. Login erfolgreich - speichere nur lokal
         currentUser = {
-            id: foundUserId,  // MaxMueller
-            username: user.username,  // max_mueller
+            id: foundUserId,
+            username: user.username,
             name: user.name,
             role: user.role,
             createdAt: user.createdAt,
-            lastLogin: Date.now()  // ✅ Timestamp lokal
+            lastLogin: Date.now()
         };
         
         setCookie('currentUser', currentUser, 7);
         
-        // Update lastLogin in DB (optional)
+        // Update lastLogin in DB
         await database.ref(`users/${foundUserId}`).update({
             lastLogin: Date.now()
         }).catch(() => {});
@@ -141,9 +146,8 @@ loginForm.addEventListener('submit', async (e) => {
         loadData();
         updateUIForRole();
         checkDienstplan();
-        updateOnlineStatus();
-        watchUserRoleChanges();
-        initSettings();  // ✅ Einstellungen initialisieren
+        initSettings();
+        setupWeeklyDienstplan();
         
     } catch (error) {
         console.error('Login Fehler:', error);
@@ -152,9 +156,6 @@ loginForm.addEventListener('submit', async (e) => {
 });
 
 logoutBtn.addEventListener('click', async () => {
-    if (currentUser) {
-        database.ref(`onlineUsers/${currentUser.id}`).set({ online: false, lastSeen: Date.now() }).catch(() => {});
-    }
     currentUser = null;
     deleteCookie('currentUser');
     loginScreen.style.display = 'flex';
@@ -173,8 +174,8 @@ window.addEventListener('load', () => {
         loadData();
         updateUIForRole();
         checkDienstplan();
-        updateOnlineStatus();
-        initSettings();  // ✅ Einstellungen initialisieren
+        initSettings();
+        setupWeeklyDienstplan();
     }
 });
 
@@ -185,16 +186,21 @@ function checkDienstplan() {
     const today = dayNames[now.getDay()];
     const hour = now.getHours();
     const minute = now.getMinutes();
-    const currentTime = hour + minute / 60;  // Aktuelle Uhrzeit als Dezimal
+    const currentTime = hour + minute / 60;
     
     database.ref('dienstplan').once('value', (snapshot) => {
         const dienstplan = snapshot.val();
         const kassaNav = document.getElementById('navKasse');
-        let hasActiveShift = false;
+        
+        console.log("Heute ist:", today); // Debug
+        console.log("Dienstplan:", dienstplan); // Debug
+        console.log("User ID:", currentUser.id); // Debug
         
         if (dienstplan && dienstplan[today]) {
             const dayPlan = dienstplan[today];
             const userSchedule = dayPlan[currentUser.id];
+            
+            console.log("User Schedule:", userSchedule); // Debug
             
             if (userSchedule) {
                 const startHour = parseInt(userSchedule.start.split(':')[0]);
@@ -205,28 +211,37 @@ function checkDienstplan() {
                 const endMin = parseInt(userSchedule.end.split(':')[1]);
                 const endTime = endHour + endMin / 60;
                 
-                // ✅ Prüfe ob aktuelle Zeit im Dienst ist
+                console.log("Aktuelle Zeit:", currentTime); // Debug
+                console.log("Dienst von:", startTime, "bis:", endTime); // Debug
+                
+                // DEBUG: Immer anzeigen für Testzwecke
+                console.log("DEBUG: Zeige Kasse für Mitschüler mit Dienst");
+                kassaNav.style.display = 'flex';
+                
                 if (currentTime >= startTime && currentTime < endTime) {
-                    kassaNav.style.display = 'flex';
-                    hasActiveShift = true;
+                    console.log("✅ Mitschüler hat aktuell Dienst");
                 } else {
-                    kassaNav.style.display = 'none';
-                    const minutesUntilShift = Math.round((startTime - currentTime) * 60);
-                    alert(`⏰ Du hast momentan keinen Dienst!\nNächster Dienst: ${userSchedule.start} Uhr`);
+                    console.log("⚠️ Mitschüler hat keinen Dienst (außerhalb der Zeit)");
                 }
+                
             } else {
+                console.log("❌ Kein Dienstplan für diesen User gefunden");
                 kassaNav.style.display = 'none';
                 alert('⏰ Du hast heute keinen Dienst eingetragen!');
             }
         } else {
+            console.log("❌ Kein Dienstplan für heute gefunden");
             kassaNav.style.display = 'none';
             alert('⏰ Für heute ist kein Dienstplan vorhanden!');
         }
+    }).catch(error => {
+        console.error("Fehler beim Laden des Dienstplans:", error);
+        // Im Fehlerfall Kasse anzeigen für Debugging
+        kassaNav.style.display = 'flex';
     });
 }
 
 // === UI FUNKTIONEN ===
-
 function updateUserInfo() {
     const initials = currentUser.name.split(' ').map(n => n[0]).join('').toUpperCase();
     document.getElementById('userAvatar').textContent = initials;
@@ -239,24 +254,31 @@ function updateUIForRole() {
     const navMitarbeiter = document.getElementById('navMitarbeiter');
     const navBenutzerverwaltung = document.getElementById('navBenutzerverwaltung');
     const navDienstplan = document.getElementById('navDienstplan');
+    const navDatenbank = document.getElementById('navDatenbank');
     
-    const role = currentUser.role;
+    const role = normalizeRole(currentUser.role);
     
+    // Für Mitschüler: NUR Kasse und Dienstplan (falls vorhanden)
     if (role === 'mitschueler') {
         navProdukte.style.display = 'none';
         navMitarbeiter.style.display = 'none';
         navBenutzerverwaltung.style.display = 'none';
-        navDienstplan.style.display = 'flex';  // ✅ Mitschüler sehen Dienstplan
-    } else if (role === 'it' || role === 'admin') {
+        navDatenbank.style.display = 'none';
+        navDienstplan.style.display = 'flex'; // Mitschüler können ihren Dienstplan sehen
+    } 
+    // Für IT/Admin: Alles
+    else if (role === 'it' || role === 'admin') {
         navProdukte.style.display = 'flex';
         navMitarbeiter.style.display = 'flex';
         navBenutzerverwaltung.style.display = 'flex';
         navDienstplan.style.display = 'flex';
+        navDatenbank.style.display = 'flex';
     }
 
+    // Dienstplan-Formular nur für Admin/IT
     const dienstplanFormSection = document.getElementById('dienstplanFormSection');
     if (dienstplanFormSection) {
-        if (role === 'admin' || role === 'it') {  // ✅ Nur Admin/IT können bearbeiten
+        if (role === 'admin' || role === 'it') {
             dienstplanFormSection.style.display = 'block';
         } else {
             dienstplanFormSection.style.display = 'none';
@@ -283,8 +305,107 @@ document.querySelectorAll('.nav-link').forEach(link => {
         if (view === 'dienstplan') renderDienstplan();
         if (view === 'protokoll') renderSalesLogs();
         if (view === 'dashboard') updateDashboard();
+        if (view === 'datenbank') renderDatenbankView();
     });
 });
+
+// === HILFSFUNKTION FÜR ROLLENFORMATIERUNG ===
+function formatRole(role) {
+    const roleMap = {
+        'mitschueler': 'Mitschüler',
+        'it': 'IT',
+        'admin': 'Admin'
+    };
+    return roleMap[role?.toLowerCase()] || role;
+}
+
+function normalizeRole(role) {
+    return role?.toLowerCase() || '';
+}
+
+// === DATEN LADEN ===
+function loadData() {
+    database.ref('products').on('value', (snapshot) => {
+        products = [];
+        snapshot.forEach((child) => {
+            products.push({
+                id: child.key,
+                ...child.val()
+            });
+        });
+        renderProducts();
+        renderProductsList();
+        if (document.getElementById('datenbankView').classList.contains('active')) {
+            renderDatenbankView();
+        }
+    });
+    
+    database.ref('users').on('value', (snapshot) => {
+        allUsers = [];
+        employees = [];
+        snapshot.forEach((child) => {
+            const user = child.val();
+            allUsers.push({
+                id: child.key,
+                ...user
+            });
+            if (normalizeRole(user.role) !== 'admin' && !user.suspended) {
+                employees.push({
+                    id: child.key,
+                    ...user
+                });
+            }
+        });
+        
+        // Update Employee Dropdown
+        const select = document.getElementById('dienstplanEmployee');
+        if (select) {
+            const currentValue = select.value;
+            select.innerHTML = '<option value="">Mitarbeiter auswählen</option>';
+            employees.forEach(emp => {
+                const opt = document.createElement('option');
+                opt.value = emp.id;
+                opt.textContent = emp.name;
+                select.appendChild(opt);
+            });
+            if (currentValue) select.value = currentValue;
+        }
+        
+        // Update Weekly Form Dropdown
+        const weeklySelect = document.getElementById('weeklyEmployee');
+        if (weeklySelect) {
+            weeklySelect.innerHTML = '<option value="">Mitarbeiter auswählen</option>';
+            employees.forEach(emp => {
+                const opt = document.createElement('option');
+                opt.value = emp.id;
+                opt.textContent = emp.name;
+                weeklySelect.appendChild(opt);
+            });
+        }
+        
+        renderEmployees();
+        renderUsersList();
+        if (document.getElementById('datenbankView').classList.contains('active')) {
+            renderDatenbankView();
+        }
+    });
+    
+    database.ref('sales').limitToLast(100).on('value', (snapshot) => {
+        sales = [];
+        snapshot.forEach((child) => {
+            sales.push({
+                id: child.key,
+                ...child.val()
+            });
+        });
+        sales.reverse();
+        renderSalesLogs();
+        updateDashboard();
+        if (document.getElementById('datenbankView').classList.contains('active')) {
+            renderDatenbankView();
+        }
+    });
+}
 
 // === PROTOKOLL MIT FILTER ===
 function renderSalesLogs() {
@@ -296,12 +417,10 @@ function renderSalesLogs() {
     
     let filteredLogs = sales;
     
-    // Nach Typ filtern
     if (filterType !== 'all') {
         filteredLogs = filteredLogs.filter(sale => sale.type === filterType);
     }
     
-    // Nach Datum filtern
     if (filterDate) {
         const selectedDate = new Date(filterDate).setHours(0, 0, 0, 0);
         filteredLogs = filteredLogs.filter(sale => {
@@ -321,7 +440,6 @@ function renderSalesLogs() {
     });
 }
 
-// Event Listener für Filter
 document.getElementById('filterType')?.addEventListener('change', renderSalesLogs);
 document.getElementById('filterDate')?.addEventListener('change', renderSalesLogs);
 
@@ -343,90 +461,12 @@ function createLogItem(sale) {
     `;
 }
 
-// === DATEN LADEN ===
-
-function loadData() {
-    database.ref('products').on('value', (snapshot) => {
-        products = [];
-        snapshot.forEach((child) => {
-            products.push({
-                id: child.key,
-                ...child.val()
-            });
-        });
-        renderProducts();
-        renderProductsList();
-    });
-    
-    database.ref('users').on('value', (snapshot) => {
-        allUsers = [];
-        employees = [];
-        snapshot.forEach((child) => {
-            const user = child.val();
-            allUsers.push({
-                id: child.key,
-                ...user
-            });
-            if (normalizeRole(user.role) !== 'admin' && !user.suspended) {
-                employees.push({
-                    id: child.key,
-                    ...user
-                });
-            }
-        });
-        
-        // Update Employee Dropdown - verwende emp.id statt emp.username
-        const select = document.getElementById('dienstplanEmployee');
-        if (select) {
-            const currentValue = select.value;
-            select.innerHTML = '<option value="">Mitarbeiter auswählen</option>';
-            employees.forEach(emp => {
-                const opt = document.createElement('option');
-                opt.value = emp.id;  // ✅ Verwende emp.id (MaxMueller)
-                opt.textContent = emp.name;
-                select.appendChild(opt);
-            });
-            if (currentValue) select.value = currentValue;
-        }
-        
-        renderEmployees();
-        renderUsersList();
-    });
-    
-    database.ref('sales').limitToLast(50).on('value', (snapshot) => {
-        sales = [];
-        snapshot.forEach((child) => {
-            sales.push({
-                id: child.key,
-                ...child.val()
-            });
-        });
-        sales.reverse();
-        renderSalesLogs();
-        updateDashboard();
-    });
-}
-
-// === HILFSFUNKTION FÜR ROLLENFORMATIERUNG ===
-function formatRole(role) {
-    const roleMap = {
-        'mitschueler': 'Mitschüler',
-        'it': 'IT',
-        'admin': 'Admin'
-    };
-    return roleMap[role?.toLowerCase()] || role;
-}
-
-function normalizeRole(role) {
-    return role?.toLowerCase() || '';
-}
-
-// === BENUTZERVERWALTUNG - NUR ADMIN ODER IT KANN ERSTELLEN ===
+// === BENUTZERVERWALTUNG ===
 document.getElementById('addUserForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const userRole = normalizeRole(currentUser.role);
     
-    if (userRole !== 'admin' && userRole !== 'it') {  // ✅ IT eingeschlossen
+    if (userRole !== 'admin' && userRole !== 'it') {
         alert('Nur Admins können neue Benutzer erstellen!');
         return;
     }
@@ -454,7 +494,6 @@ document.getElementById('addUserForm').addEventListener('submit', async (e) => {
         }
         
         if (editingUserId) {
-            // Update
             await userRef.update({
                 password: password,
                 name: nameShort,
@@ -467,7 +506,6 @@ document.getElementById('addUserForm').addEventListener('submit', async (e) => {
             document.querySelector('#addUserForm .btn').textContent = 'Erstellen';
             document.getElementById('newName').disabled = false;
         } else {
-            // Create
             await userRef.set({
                 username: username,
                 password: password,
@@ -509,7 +547,7 @@ function renderUsersList() {
             </div>
             <div style="${suspendedStyle}; font-weight: 600;">${suspendedText}</div>
             <div class="user-actions">
-                ${userRole === 'admin' || userRole === 'it' ? `  <!-- ✅ IT eingeschlossen -->
+                ${userRole === 'admin' || userRole === 'it' ? `
                     <button class="icon-btn edit" onclick="editUser('${user.id}')">✏️</button>
                     <button class="icon-btn delete" onclick="deleteUser('${user.id}')">🗑️</button>
                 ` : ''}
@@ -521,7 +559,7 @@ function renderUsersList() {
 
 function editUser(userId) {
     const userRole = normalizeRole(currentUser.role);
-    if (userRole !== 'admin' && userRole !== 'it') {  // ✅ IT eingeschlossen
+    if (userRole !== 'admin' && userRole !== 'it') {
         alert('Nur Admins können Benutzer bearbeiten!');
         return;
     }
@@ -541,7 +579,7 @@ function editUser(userId) {
 
 async function deleteUser(userId) {
     const userRole = normalizeRole(currentUser.role);
-    if (userRole !== 'admin' && userRole !== 'it') {  // ✅ IT eingeschlossen
+    if (userRole !== 'admin' && userRole !== 'it') {
         alert('Nur Admins können Benutzer löschen!');
         return;
     }
@@ -564,69 +602,183 @@ async function deleteUser(userId) {
     }
 }
 
-// === LIVE-UPDATE FÜR ROLLENÄNDERUNGEN ===
-function watchUserRoleChanges() {
-    if (!currentUser) return;
+// === WÖCHENTLICHER DIENSTPLAN ===
+function setupWeeklyDienstplan() {
+    const form = document.getElementById('dienstplanForm');
+    if (!form) return;
     
-    database.ref(`users/${currentUser.id}`).on('value', (snapshot) => {
-        const userData = snapshot.val();
-        if (userData) {
-            const oldRole = currentUser.role;
-            currentUser.role = userData.role;  // ✅ Aktuelle Rolle speichern
-            
-            // Wenn Rolle geändert wurde
-            if (userData.role !== oldRole) {
-                setCookie('currentUser', currentUser, 7);
-                updateUserInfo();
-                updateUIForRole();
-                loadData();
-                alert(`✅ Deine Rolle wurde aktualisiert: ${formatRole(userData.role)}`);
-            }
-        }
+    form.style.display = 'none';
+    
+    const container = document.createElement('div');
+    container.id = 'weeklyDienstplanForm';
+    container.innerHTML = `
+        <h3>Wöchentlichen Dienstplan erstellen</h3>
+        <div class="week-form-grid">
+            <div class="day-checkbox-group">
+                <input type="checkbox" id="dayMontag" value="Montag">
+                <label for="dayMontag">Montag</label>
+            </div>
+            <div class="day-checkbox-group">
+                <input type="checkbox" id="dayDienstag" value="Dienstag">
+                <label for="dayDienstag">Dienstag</label>
+            </div>
+            <div class="day-checkbox-group">
+                <input type="checkbox" id="dayMittwoch" value="Mittwoch">
+                <label for="dayMittwoch">Mittwoch</label>
+            </div>
+            <div class="day-checkbox-group">
+                <input type="checkbox" id="dayDonnerstag" value="Donnerstag">
+                <label for="dayDonnerstag">Donnerstag</label>
+            </div>
+            <div class="day-checkbox-group">
+                <input type="checkbox" id="dayFreitag" value="Freitag">
+                <label for="dayFreitag">Freitag</label>
+            </div>
+            <div class="day-checkbox-group">
+                <input type="checkbox" id="daySamstag" value="Samstag">
+                <label for="daySamstag">Samstag</label>
+            </div>
+        </div>
+        
+        <div style="margin: 20px 0;">
+            <label>Mitarbeiter auswählen:</label>
+            <select id="weeklyEmployee" style="width: 100%; padding: 12px; margin-top: 8px;">
+                <option value="">Mitarbeiter auswählen</option>
+            </select>
+        </div>
+        
+        <div style="margin: 20px 0;">
+            <label>Zeiten:</label>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px;">
+                <input type="time" id="weeklyStart" value="07:00">
+                <input type="time" id="weeklyEnd" value="14:00">
+            </div>
+        </div>
+        
+        <div style="margin: 20px 0;">
+            <label>Zusätzliche Info (optional):</label>
+            <input type="text" id="weeklyInfo" placeholder="z.B. Freitag: Auslieferung" style="width: 100%; padding: 12px; margin-top: 8px;">
+        </div>
+        
+        <div class="quick-schedule-options">
+            <button type="button" class="quick-option-btn" onclick="applyStandardWeek()">
+                Ganze Woche (Mo-Fr)
+            </button>
+            <button type="button" class="quick-option-btn" onclick="applyWeekendOnly()">
+                Wochenende (Sa)
+            </button>
+            <button type="button" class="quick-option-btn" onclick="clearAllDays()">
+                Alle abwählen
+            </button>
+        </div>
+        
+        <button type="button" class="btn btn-primary" onclick="saveWeeklyDienstplan()" style="margin-top: 20px;">
+            🗓️ Für gewählte Tage speichern
+        </button>
+    `;
+    
+    form.parentNode.appendChild(container);
+    
+    const select = document.getElementById('weeklyEmployee');
+    select.innerHTML = '<option value="">Mitarbeiter auswählen</option>';
+    employees.forEach(emp => {
+        const opt = document.createElement('option');
+        opt.value = emp.id;
+        opt.textContent = emp.name;
+        select.appendChild(opt);
     });
 }
 
-// === DIENSTPLAN ===
-document.getElementById('dienstplanForm')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
+function applyStandardWeek() {
+    document.getElementById('dayMontag').checked = true;
+    document.getElementById('dayDienstag').checked = true;
+    document.getElementById('dayMittwoch').checked = true;
+    document.getElementById('dayDonnerstag').checked = true;
+    document.getElementById('dayFreitag').checked = true;
+    document.getElementById('daySamstag').checked = false;
+}
+
+function applyWeekendOnly() {
+    clearAllDays();
+    document.getElementById('daySamstag').checked = true;
+}
+
+function clearAllDays() {
+    document.getElementById('dayMontag').checked = false;
+    document.getElementById('dayDienstag').checked = false;
+    document.getElementById('dayMittwoch').checked = false;
+    document.getElementById('dayDonnerstag').checked = false;
+    document.getElementById('dayFreitag').checked = false;
+    document.getElementById('daySamstag').checked = false;
+}
+
+async function saveWeeklyDienstplan() {
+    const employeeId = document.getElementById('weeklyEmployee').value;
+    const startTime = document.getElementById('weeklyStart').value;
+    const endTime = document.getElementById('weeklyEnd').value;
+    const info = document.getElementById('weeklyInfo').value.trim();
     
-    if (normalizeRole(currentUser.role) !== 'admin' && normalizeRole(currentUser.role) !== 'it') {  // ✅ IT eingeschlossen
-        alert('Keine Berechtigung!');
+    if (!employeeId || !startTime || !endTime) {
+        alert('Bitte alle Pflichtfelder ausfüllen!');
         return;
     }
     
-    const day = document.getElementById('dienstplanDay').value;
-    const employee = document.getElementById('dienstplanEmployee').value;  // ✅ Das ist jetzt die ID (MaxMueller)
-    const start = document.getElementById('dienstplanStart').value;
-    const end = document.getElementById('dienstplanEnd').value;
+    const days = [];
+    if (document.getElementById('dayMontag').checked) days.push('Montag');
+    if (document.getElementById('dayDienstag').checked) days.push('Dienstag');
+    if (document.getElementById('dayMittwoch').checked) days.push('Mittwoch');
+    if (document.getElementById('dayDonnerstag').checked) days.push('Donnerstag');
+    if (document.getElementById('dayFreitag').checked) days.push('Freitag');
+    if (document.getElementById('daySamstag').checked) days.push('Samstag');
     
-    if (!day || !employee || !start || !end) {
-        alert('Bitte alle Felder ausfüllen!');
+    if (days.length === 0) {
+        alert('Bitte mindestens einen Tag auswählen!');
         return;
     }
     
     try {
-        const planRef = database.ref(`dienstplan/${day}/${employee}`);  // ✅ Verwende employee (ID)
-        await planRef.set({
-            start: start,
-            end: end
+        const updates = {};
+        const employeeName = employees.find(e => e.id === employeeId)?.name || employeeId;
+        
+        days.forEach(day => {
+            const scheduleData = {
+                start: startTime,
+                end: endTime,
+                assignedBy: currentUser.id,
+                assignedAt: Date.now(),
+                employeeName: employeeName
+            };
+            
+            if (info) {
+                scheduleData.info = info;
+            }
+            
+            updates[`dienstplan/${day}/${employeeId}`] = scheduleData;
         });
-        alert('Dienstplan aktualisiert!');
-        document.getElementById('dienstplanForm').reset();
+        
+        await database.ref().update(updates);
+        
+        let message = `✅ Dienstplan für ${days.length} Tage gespeichert!\n\n`;
+        message += `Mitarbeiter: ${employeeName}\n`;
+        message += `Zeiten: ${startTime} - ${endTime} Uhr\n`;
+        if (info) message += `Info: ${info}\n\n`;
+        message += `Tage: ${days.join(', ')}`;
+        
+        alert(message);
         renderDienstplan();
     } catch (error) {
         alert('Fehler: ' + error.message);
     }
-});
+}
 
-function renderDienstplan() {
+// === DIENSTPLAN ANZEIGEN ===
+async function renderDienstplan() {
     const list = document.getElementById('dienstplanList');
     if (!list) return;
     
     const userRole = normalizeRole(currentUser.role);
-    const isEditMode = userRole === 'admin' || userRole === 'it';  // ✅ Nur Admin/IT können bearbeiten
     
-    database.ref('dienstplan').once('value', (snapshot) => {
+    database.ref('dienstplan').once('value', async (snapshot) => {
         const dienstplan = snapshot.val() || {};
         list.innerHTML = '';
         
@@ -635,46 +787,154 @@ function renderDienstplan() {
             return;
         }
         
-        Object.entries(dienstplan).forEach(([day, workers]) => {
-            const dayDiv = document.createElement('div');
-            dayDiv.style.marginBottom = '20px';
-            dayDiv.style.borderLeft = '4px solid var(--accent-blue)';
-            dayDiv.style.paddingLeft = '16px';
-            dayDiv.innerHTML = `<h4>${day}</h4>`;
+        // Aktuelle Woche anzeigen
+        const now = new Date();
+        const dayNames = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'];
+        const today = dayNames[now.getDay()];
+        
+        // Wochentage in richtiger Reihenfolge
+        const orderedDays = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
+        
+        // Für Mitschüler: Zeige nur Tage, an denen sie Dienst haben
+        if (userRole === 'mitschueler') {
+            let hasAnyShift = false;
             
-            // ✅ Zeige nur den eigenen Dienst für Mitschüler
-            if (userRole === 'mitschueler') {
-                const userSchedule = workers[currentUser.id];
-                if (userSchedule) {
-                    const workerDiv = document.createElement('div');
-                    workerDiv.className = 'dienstplan-item';
-                    workerDiv.innerHTML = `
-                        <div>${currentUser.name} (Du)</div>
-                        <div>${userSchedule.start} - ${userSchedule.end}</div>
+            orderedDays.forEach(day => {
+                if (dienstplan[day] && dienstplan[day][currentUser.id]) {
+                    hasAnyShift = true;
+                    const schedule = dienstplan[day][currentUser.id];
+                    const dayDiv = document.createElement('div');
+                    dayDiv.className = 'dienstplan-item';
+                    dayDiv.style.borderLeft = day === today ? '4px solid var(--accent-green)' : '4px solid var(--accent-blue)';
+                    
+                    let infoHtml = '';
+                    if (schedule.info) {
+                        infoHtml = `<div style="color: var(--text-secondary); font-size: 14px; margin-top: 4px;">📝 ${schedule.info}</div>`;
+                    }
+                    
+                    dayDiv.innerHTML = `
+                        <div>
+                            <div style="font-weight: 700;">${day} ${day === today ? '(Heute)' : ''}</div>
+                            <div style="font-size: 18px; font-weight: 600;">${schedule.start} - ${schedule.end}</div>
+                            ${infoHtml}
+                        </div>
+                        <div style="font-size: 14px; color: var(--text-secondary);">
+                            Dein Dienst
+                        </div>
                     `;
-                    dayDiv.appendChild(workerDiv);
+                    list.appendChild(dayDiv);
                 }
-            } else {
-                // Admin/IT sehen alle und können bearbeiten
-                Object.entries(workers).forEach(([worker, schedule]) => {
-                    const workerDiv = document.createElement('div');
-                    workerDiv.className = 'dienstplan-item';
-                    const deleteBtn = isEditMode ? `<button onclick="deleteDienstplan('${day}', '${worker}')" class="icon-btn delete">🗑️</button>` : '';
-                    workerDiv.innerHTML = `
-                        <div>${worker}</div>
-                        <div>${schedule.start} - ${schedule.end}</div>
-                        ${deleteBtn}
-                    `;
-                    dayDiv.appendChild(workerDiv);
-                });
+            });
+            
+            if (!hasAnyShift) {
+                list.innerHTML = '<p style="color: var(--text-secondary); text-align: center; padding: 40px;">Du hast keine Dienste in dieser Woche eingetragen</p>';
             }
             
-            // Nur Einträge hinzufügen wenn es etwas zu zeigen gibt
-            if (dayDiv.children.length > 1) {
-                list.appendChild(dayDiv);
-            }
-        });
+            // Zeige wer noch mit dir Dienst hat
+            renderSharedShifts(dienstplan);
+            
+        } else {
+            // Für Admin/IT: Zeige alles
+            orderedDays.forEach(day => {
+                if (dienstplan[day]) {
+                    const dayDiv = document.createElement('div');
+                    dayDiv.className = 'dienstplan-day';
+                    dayDiv.style.marginBottom = '24px';
+                    
+                    const header = document.createElement('div');
+                    header.className = 'dienstplan-day-header';
+                    header.textContent = `${day} ${day === today ? '(Heute)' : ''}`;
+                    dayDiv.appendChild(header);
+                    
+                    const content = document.createElement('div');
+                    content.className = 'dienstplan-day-content';
+                    
+                    Object.entries(dienstplan[day]).forEach(([employeeId, schedule]) => {
+                        const employee = allUsers.find(u => u.id === employeeId);
+                        if (!employee) return;
+                        
+                        const entryDiv = document.createElement('div');
+                        entryDiv.className = 'dienstplan-entry';
+                        
+                        let infoHtml = '';
+                        if (schedule.info) {
+                            infoHtml = `<div style="color: var(--text-secondary); font-size: 12px; margin-top: 2px;">📝 ${schedule.info}</div>`;
+                        }
+                        
+                        entryDiv.innerHTML = `
+                            <div>
+                                <div class="dienstplan-worker-name">${employee.name}</div>
+                                <div class="dienstplan-time">${schedule.start} - ${schedule.end}</div>
+                                ${infoHtml}
+                            </div>
+                            <div>
+                                <button class="icon-btn delete" onclick="deleteDienstplan('${day}', '${employeeId}')">🗑️</button>
+                            </div>
+                        `;
+                        content.appendChild(entryDiv);
+                    });
+                    
+                    dayDiv.appendChild(content);
+                    list.appendChild(dayDiv);
+                }
+            });
+        }
     });
+}
+
+// Zeige wer noch mit dir Dienst hat (für Mitschüler)
+function renderSharedShifts(dienstplan) {
+    const now = new Date();
+    const dayNames = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'];
+    const today = dayNames[now.getDay()];
+    
+    let sharedShifts = [];
+    Object.entries(dienstplan).forEach(([day, workers]) => {
+        if (workers[currentUser.id]) {
+            Object.entries(workers).forEach(([employeeId, schedule]) => {
+                if (employeeId !== currentUser.id) {
+                    const employee = allUsers.find(u => u.id === employeeId);
+                    if (employee) {
+                        sharedShifts.push({
+                            day: day,
+                            employee: employee.name,
+                            start: schedule.start,
+                            end: schedule.end,
+                            isToday: day === today
+                        });
+                    }
+                }
+            });
+        }
+    });
+    
+    if (sharedShifts.length > 0) {
+        const sharedDiv = document.createElement('div');
+        sharedDiv.className = 'employee-shift-info';
+        sharedDiv.innerHTML = '<h4 style="margin-bottom: 12px;">👥 Kollegen mit denen du Dienst hast:</h4>';
+        
+        const listDiv = document.createElement('div');
+        listDiv.className = 'shift-employee-list';
+        
+        sharedShifts.forEach(shift => {
+            const card = document.createElement('div');
+            card.className = 'shift-employee-card';
+            card.innerHTML = `
+                <div class="shift-employee-avatar">${shift.employee.split(' ').map(n => n[0]).join('').toUpperCase()}</div>
+                <div>
+                    <div style="font-weight: 600;">${shift.employee}</div>
+                    <div style="font-size: 12px; color: var(--text-secondary);">
+                        ${shift.day} ${shift.isToday ? ' (Heute)' : ''}<br>
+                        ${shift.start} - ${shift.end}
+                    </div>
+                </div>
+            `;
+            listDiv.appendChild(card);
+        });
+        
+        sharedDiv.appendChild(listDiv);
+        document.getElementById('dienstplanList').appendChild(sharedDiv);
+    }
 }
 
 async function deleteDienstplan(day, employee) {
@@ -686,13 +946,6 @@ async function deleteDienstplan(day, employee) {
             alert('Fehler: ' + error.message);
         }
     }
-}
-
-// === SOUND FUNKTION ===
-function playSound() {
-    const audio = new Audio('sound.mp3');
-    audio.volume = 0.3;
-    audio.play().catch(err => console.log('Sound konnte nicht abgespielt werden'));
 }
 
 // === KASSE ===
@@ -768,7 +1021,7 @@ function renderCart() {
         cartItems.appendChild(cartItem);
     });
     
-    cartTotal.textContent = total.toFixed(2) + '€';
+    cartTotal.textContent = total.toFixed(2) + '€'; // ✅ € Symbol hinzufügen
 }
 
 function updateCartQuantity(productId, change) {
@@ -818,7 +1071,6 @@ document.getElementById('completeSaleBtn').addEventListener('click', async () =>
         const change = Math.max(0, paid - total);
         document.getElementById('changeAmount').textContent = change.toFixed(2) + '€';
         
-        // Farbe ändern wenn genug bezahlt
         if (paid >= total) {
             document.getElementById('changeAmount').style.color = 'var(--accent-green)';
         } else {
@@ -860,7 +1112,6 @@ document.getElementById('confirmPaymentBtn')?.addEventListener('click', async ()
         
         await database.ref().update(updates);
         
-        // UI zurücksetzen
         document.getElementById('paymentSection').style.display = 'none';
         document.getElementById('completeSaleBtn').style.display = 'width: 100%';
         document.getElementById('paymentInput').value = '';
@@ -877,6 +1128,13 @@ document.getElementById('cancelPaymentBtn')?.addEventListener('click', () => {
     document.getElementById('paymentSection').style.display = 'none';
     document.getElementById('completeSaleBtn').style.display = 'width: 100%';
 });
+
+// === SOUND FUNKTION ===
+function playSound() {
+    const audio = new Audio('sound.mp3');
+    audio.volume = 0.3;
+    audio.play().catch(err => console.log('Sound konnte nicht abgespielt werden'));
+}
 
 // === PRODUKTVERWALTUNG ===
 document.getElementById('addProductForm').addEventListener('submit', async (e) => {
@@ -971,7 +1229,6 @@ async function deleteProduct(productId) {
 }
 
 // === MITARBEITER ===
-
 function renderEmployees() {
     const list = document.getElementById('employeesList');
     list.innerHTML = '';
@@ -1027,95 +1284,119 @@ async function toggleEmployeeSuspend(userId, suspend) {
     }
 }
 
-// === ONLINE STATUS TRACKING ===
-function updateOnlineStatus() {
-    if (!currentUser) return;
+// === DATENBANK VIEW ===
+function renderDatenbankView() {
+    const usersBody = document.getElementById('dbUsersBody');
+    const productsBody = document.getElementById('dbProductsBody');
+    const salesBody = document.getElementById('dbSalesBody');
     
-    const userRef = database.ref(`onlineUsers/${currentUser.id}`);
+    if (!usersBody || !productsBody || !salesBody) return;
     
-    // ✅ Funktion zum Online-Status setzen
-    const setOnlineStatus = (isOnline) => {
-        const now = Date.now();
-        userRef.set({
-            name: currentUser.name,
-            username: currentUser.username,
-            role: currentUser.role,
-            lastSeen: now,
-            online: isOnline,
-            lastSeenFormatted: new Date(now).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
-        }).catch(() => {});
+    // Benutzer anzeigen
+    usersBody.innerHTML = '';
+    allUsers.forEach(user => {
+        const row = document.createElement('tr');
+        const createdDate = user.createdAt ? new Date(user.createdAt).toLocaleDateString('de-DE') : '-';
         
-        // Update UI wenn online
-        if (isOnline) {
-            updateOnlineStatusUI();
-        }
-    };
-    
-    // Initial: Setze user als online
-    setOnlineStatus(true);
-    
-    // Update UI alle 10 Sekunden
-    const uiUpdateInterval = setInterval(() => {
-        if (currentUser) {
-            updateOnlineStatusUI();
-        } else {
-            clearInterval(uiUpdateInterval);
-        }
-    }, 10000);
-    
-    // ✅ ZUVERLÄSSIGER: Multiple Events für Offline
-    const goOffline = () => {
-        setOnlineStatus(false);
-        clearInterval(uiUpdateInterval);
-    };
-    
-    // 1. Wenn Tab/Fenster geschlossen wird
-    window.addEventListener('beforeunload', goOffline);
-    
-    // 2. Wenn Seite verlassen wird (zuverlässiger)
-    window.addEventListener('pagehide', goOffline);
-    
-    // 3. Wenn Seite nicht sichtbar ist (Tab im Hintergrund)
-    document.addEventListener('visibilitychange', () => {
-        if (document.hidden) {
-            goOffline();
-        } else if (currentUser) {
-            setOnlineStatus(true);
-        }
+        row.innerHTML = `
+            <td><code style="font-size: 11px;">${user.id}</code></td>
+            <td>${user.name}</td>
+            <td>@${user.username}</td>
+            <td><span class="user-role-badge">${formatRole(user.role)}</span></td>
+            <td>${createdDate}</td>
+            <td>${user.suspended ? '⛔ Suspended' : '✅ Aktiv'}</td>
+            <td class="db-action-buttons">
+                <button class="icon-btn edit" onclick="editUserFromDb('${user.id}')">✏️</button>
+                <button class="icon-btn delete" onclick="deleteUser('${user.id}')">🗑️</button>
+            </td>
+        `;
+        usersBody.appendChild(row);
     });
     
-    // 4. Bei Logout
-    logoutBtn.addEventListener('click', goOffline);
+    // Produkte anzeigen
+    productsBody.innerHTML = '';
+    products.forEach(product => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td><code style="font-size: 11px;">${product.id}</code></td>
+            <td>${product.name}</td>
+            <td>${product.price.toFixed(2)}€</td>
+            <td>${product.stock}</td>
+            <td>${product.category}</td>
+            <td class="db-action-buttons">
+                <button class="icon-btn edit" onclick="editProduct('${product.id}')">✏️</button>
+                <button class="icon-btn delete" onclick="deleteProduct('${product.id}')">🗑️</button>
+            </td>
+        `;
+        productsBody.appendChild(row);
+    });
+    
+    // Verkäufe anzeigen
+    salesBody.innerHTML = '';
+    sales.slice(0, 50).forEach(sale => {
+        const row = document.createElement('tr');
+        const itemCount = sale.items ? sale.items.length : 0;
+        const date = new Date(sale.date || sale.timestamp);
+        const itemsPreview = sale.items ? sale.items.map(item => `${item.name} (${item.quantity}x)`).join(', ') : '-';
+        
+        row.innerHTML = `
+            <td><code style="font-size: 11px;">${sale.id.substring(0, 8)}...</code></td>
+            <td>${date.toLocaleDateString('de-DE')}<br><small>${date.toLocaleTimeString('de-DE')}</small></td>
+            <td>${sale.employee || 'Unbekannt'}</td>
+            <td>${sale.total?.toFixed(2)}€</td>
+            <td><small>${itemsPreview.substring(0, 50)}${itemsPreview.length > 50 ? '...' : ''}</small></td>
+            <td class="db-action-buttons">
+                <button class="icon-btn" onclick="viewSaleDetails('${sale.id}')">👁️</button>
+                <button class="icon-btn delete" onclick="deleteSale('${sale.id}')">🗑️</button>
+            </td>
+        `;
+        salesBody.appendChild(row);
+    });
 }
 
-// ✅ NEU: UI für Online-Status aktualisieren
-function updateOnlineStatusUI() {
-    const indicator = document.getElementById('onlineIndicator');
-    const statusText = document.getElementById('onlineText');
-    const lastSeenEl = document.getElementById('lastSeen');
-    const onlineTodayEl = document.getElementById('onlineToday');
+function editUserFromDb(userId) {
+    editUser(userId);
+    document.getElementById('benutzerverwaltungView').classList.add('active');
+    document.getElementById('datenbankView').classList.remove('active');
     
-    if (indicator && statusText) {
-        indicator.style.background = '#10b981';
-        statusText.textContent = 'Online';
-        statusText.style.color = '#10b981';
+    document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+    document.querySelector('[data-view="benutzerverwaltung"]').classList.add('active');
+}
+
+function viewSaleDetails(saleId) {
+    const sale = sales.find(s => s.id === saleId);
+    if (!sale) return;
+    
+    let details = `📋 Verkaufsdetails\n\n`;
+    details += `ID: ${sale.id}\n`;
+    details += `Datum: ${new Date(sale.date || sale.timestamp).toLocaleString('de-DE')}\n`;
+    details += `Mitarbeiter: ${sale.employee}\n`;
+    details += `Gesamt: ${sale.total?.toFixed(2)}€\n`;
+    details += `Bezahlt: ${sale.paid?.toFixed(2)}€\n`;
+    details += `Wechselgeld: ${sale.change?.toFixed(2)}€\n\n`;
+    
+    if (sale.items && sale.items.length > 0) {
+        details += `Produkte:\n`;
+        sale.items.forEach(item => {
+            details += `• ${item.name}: ${item.quantity}x ${item.price.toFixed(2)}€ = ${(item.quantity * item.price).toFixed(2)}€\n`;
+        });
     }
     
-    // Hole aktuelle Zeit
-    const now = new Date();
-    const timeString = now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-    const dateString = now.toLocaleDateString('de-DE', { month: '2-digit', day: '2-digit' });
+    alert(details);
+}
+
+async function deleteSale(saleId) {
+    if (!confirm('Verkauf wirklich löschen?')) return;
     
-    if (lastSeenEl) {
-        lastSeenEl.textContent = timeString;
-    }
-    if (onlineTodayEl) {
-        onlineTodayEl.textContent = dateString;
+    try {
+        await database.ref(`sales/${saleId}`).remove();
+        alert('Verkauf gelöscht!');
+    } catch (error) {
+        alert('Fehler: ' + error.message);
     }
 }
 
 // === DASHBOARD ===
-
 function updateDashboard() {
     const today = new Date().setHours(0, 0, 0, 0);
     const todaySales = sales.filter(sale => {
@@ -1124,20 +1405,30 @@ function updateDashboard() {
     });
     
     const todayRevenue = todaySales.reduce((sum, sale) => sum + (sale.total || 0), 0);
+    const totalRevenue = sales.reduce((sum, sale) => sum + (sale.total || 0), 0);
     const employeeCount = employees.length;
     
     document.getElementById('statSales').textContent = todaySales.length;
     document.getElementById('statRevenue').textContent = todayRevenue.toFixed(2) + '€';
+    document.getElementById('statTotalRevenue').textContent = totalRevenue.toFixed(2) + '€';
     document.getElementById('statEmployees').textContent = employeeCount;
+    
+    // Letzte Verkäufe
+    const recentLogs = document.getElementById('recentLogs');
+    if (recentLogs) {
+        recentLogs.innerHTML = '';
+        sales.slice(0, 10).forEach(sale => {
+            recentLogs.innerHTML += createLogItem(sale);
+        });
+    }
 }
 
 // === EINSTELLUNGEN ===
 function initSettings() {
-    // Passwort ändern - BEHOBEN: settingsNewPassword statt newPassword
     document.getElementById('changePasswordForm')?.addEventListener('submit', async (e) => {
         e.preventDefault();
         const oldPassword = document.getElementById('oldPassword').value;
-        const newPassword = document.getElementById('settingsNewPassword').value;  // ✅ BEHOBEN
+        const newPassword = document.getElementById('settingsNewPassword').value;
         const confirmPassword = document.getElementById('confirmPassword').value;
         
         if (newPassword !== confirmPassword) {
@@ -1170,12 +1461,10 @@ function initSettings() {
         }
     });
     
-    // Design-Einstellungen - ERWEITERT
     document.getElementById('designSelect')?.addEventListener('change', (e) => {
         const design = e.target.value;
         localStorage.setItem('design', design);
         
-        // Zeige/Verberge Custom Color Section
         const customSection = document.getElementById('customColorsSection');
         if (design === 'custom' && customSection) {
             customSection.style.display = 'grid';
@@ -1186,7 +1475,6 @@ function initSettings() {
         applyDesign(design);
     });
     
-    // Custom Farben Live Preview
     document.getElementById('customBackgroundColor')?.addEventListener('input', () => {
         applyDesign('custom');
     });
@@ -1194,7 +1482,6 @@ function initSettings() {
         applyDesign('custom');
     });
     
-    // Font-Einstellungen
     document.getElementById('fontSelect')?.addEventListener('change', (e) => {
         const font = e.target.value;
         localStorage.setItem('fontSize', font);
@@ -1225,14 +1512,14 @@ function applyDesign(design) {
         root.style.setProperty('--text-secondary', '#cbd5e1');
         root.style.setProperty('--accent-blue', '#0ea5e9');
         root.style.setProperty('--accent-blue-hover', '#0284c7');
-    } else if (design === 'green') {  // ✅ NEU
+    } else if (design === 'green') {
         root.style.setProperty('--bg-dark', '#051c15');
         root.style.setProperty('--bg-secondary', '#0d3d2c');
         root.style.setProperty('--bg-tertiary', '#1b4d3d');
         root.style.setProperty('--text-primary', '#f0fdf4');
         root.style.setProperty('--text-secondary', '#b0e0d0');
         root.style.setProperty('--accent-green', '#10b981');
-    } else if (design === 'purple') {  // ✅ NEU
+    } else if (design === 'purple') {
         root.style.setProperty('--bg-dark', '#2d1b4e');
         root.style.setProperty('--bg-secondary', '#3d2463');
         root.style.setProperty('--bg-tertiary', '#4d2a7a');
@@ -1240,7 +1527,7 @@ function applyDesign(design) {
         root.style.setProperty('--text-secondary', '#e9d5ff');
         root.style.setProperty('--accent-blue', '#a855f7');
         root.style.setProperty('--accent-blue-hover', '#9333ea');
-    } else if (design === 'orange') {  // ✅ NEU
+    } else if (design === 'orange') {
         root.style.setProperty('--bg-dark', '#431407');
         root.style.setProperty('--bg-secondary', '#5a2e1a');
         root.style.setProperty('--bg-tertiary', '#7c3a1d');
@@ -1248,7 +1535,7 @@ function applyDesign(design) {
         root.style.setProperty('--text-secondary', '#fdd699');
         root.style.setProperty('--accent-blue', '#f97316');
         root.style.setProperty('--accent-blue-hover', '#ea580c');
-    } else if (design === 'custom') {  // ✅ NEU - Benutzerdefiniert
+    } else if (design === 'custom') {
         const customBg = document.getElementById('customBackgroundColor')?.value || '#111827';
         const customText = document.getElementById('customTextColor')?.value || '#ffffff';
         root.style.setProperty('--bg-dark', customBg);
@@ -1269,7 +1556,6 @@ function applyFontSize(size) {
     }
 }
 
-// Beim Laden: Zeige Custom Section wenn gespeichert
 window.addEventListener('load', () => {
     const design = localStorage.getItem('design') || 'dark';
     const font = localStorage.getItem('fontSize') || 'normal';
@@ -1280,7 +1566,6 @@ window.addEventListener('load', () => {
     if (document.getElementById('designSelect')) {
         document.getElementById('designSelect').value = design;
         
-        // Zeige Custom Section wenn nötig
         const customSection = document.getElementById('customColorsSection');
         if (design === 'custom' && customSection) {
             customSection.style.display = 'grid';
@@ -1290,42 +1575,3 @@ window.addEventListener('load', () => {
         document.getElementById('fontSelect').value = font;
     }
 });
-
-function updateOnlineUsersDisplay() {
-    const userRole = normalizeRole(currentUser.role);
-    if (userRole !== 'admin' && userRole !== 'it') return;
-    
-    const container = document.getElementById('onlineUsersContainer');
-    if (!container) return;
-    
-    container.innerHTML = '<h4 style="margin-bottom: 12px;">🟢 Online Mitarbeiter</h4>';
-    
-    // ✅ BEHOBEN: Zeige alle Online-User mit Status
-    if (Object.keys(onlineUsers).length === 0) {
-        container.innerHTML += '<p style="color: var(--text-secondary); font-size: 12px;">Niemand online</p>';
-        return;
-    }
-    
-    Object.entries(onlineUsers).forEach(([userId, user]) => {
-        const isOnline = user.online;
-        const onlineStatus = isOnline ? '🟢 Online' : '⚫ Offline';
-        const onlineColor = isOnline ? '#10b981' : '#9ca3af';
-        const lastSeenTime = user.lastSeenFormatted || new Date(user.lastSeen).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-        
-        const div = document.createElement('div');
-        div.style.cssText = `background: var(--bg-tertiary); padding: 12px; border-radius: 8px; margin-bottom: 8px; border-left: 3px solid ${onlineColor};`;
-        div.innerHTML = `
-            <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
-                <div style="width: 8px; height: 8px; background: ${onlineColor}; border-radius: 50%;"></div>
-                <div style="font-weight: 600; margin-bottom: 2px;">${user.name}</div>
-            </div>
-            <div style="font-size: 11px; color: var(--text-secondary); margin-left: 14px;">
-                @${user.username}
-            </div>
-            <div style="font-size: 11px; color: var(--text-secondary); margin-left: 14px; margin-top: 4px;">
-                ${onlineStatus} • ${lastSeenTime}
-            </div>
-        `;
-        container.appendChild(div);
-    });
-}
