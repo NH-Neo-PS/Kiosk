@@ -63,7 +63,11 @@
                     <span class="icon">📋</span>
                     <span>Protokoll</span>
                 </a>
-                <a href="#" class="nav-link" data-view="einstellungen" id="navEinstellungen">
+                <a href="#" class="nav-link" data-view="datenbank" id="navDatenbank">
+                    <span class="icon">🗃️</span>
+                    <span>Datenbank</span>
+                </a>
+                <a href="#" class="nav-link" data-view="einstellungen">
                     <span class="icon">⚙️</span>
                     <span>Einstellungen</span>
                 </a>
@@ -75,20 +79,6 @@
                     <div>
                         <p class="user-name" id="userName">Max Mustermann</p>
                         <p class="user-role" id="userRole">Admin</p>
-                    </div>
-                </div>
-                
-                <!-- ✅ NEU: Online Status Anzeige -->
-                <div id="onlineStatusContainer" style="background: var(--bg-tertiary); padding: 12px; border-radius: 8px; margin-bottom: 12px; font-size: 12px;">
-                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-                        <div id="onlineIndicator" style="width: 10px; height: 10px; background: #10b981; border-radius: 50%; animation: pulse 2s infinite;"></div>
-                        <span id="onlineText" style="color: #10b981; font-weight: 600;">Online</span>
-                    </div>
-                    <div style="color: var(--text-secondary);">
-                        📅 Heute: <span id="onlineToday">-</span>
-                    </div>
-                    <div style="color: var(--text-secondary);">
-                        ⏰ Zuletzt: <span id="lastSeen">-</span>
                     </div>
                 </div>
                 
@@ -112,17 +102,26 @@
                     </div>
                     
                     <div class="stat-card">
-                        <span>Umsatz Heute</span>
+                        <div class="stat-header">
+                            <span>Umsatz Heute</span>
+                            <span class="stat-icon">💰</span>
+                        </div>
                         <p class="stat-value" id="statRevenue">0€</p>
                     </div>
                     
                     <div class="stat-card">
-                        <span>Gesamtumsatz</span>
+                        <div class="stat-header">
+                            <span>Gesamtumsatz</span>
+                            <span class="stat-icon">🏦</span>
+                        </div>
                         <p class="stat-value" id="statTotalRevenue">0€</p>
                     </div>
 
                     <div class="stat-card">
-                        <span>Mitarbeiter Online</span>
+                        <div class="stat-header">
+                            <span>Aktive Mitarbeiter</span>
+                            <span class="stat-icon">👥</span>
+                        </div>
                         <p class="stat-value" id="statEmployees">0</p>
                     </div>
                 </div>
@@ -143,7 +142,9 @@
                 <h2>💰 Kasse</h2>
                 
                 <div class="kasse-layout">
-                    <div class="products-grid" id="productsGrid"></div>
+                    <div>
+                        <div class="products-grid" id="productsGrid"></div>
+                    </div>
                     
                     <div class="cart-section">
                         <h3>🛒 Warenkorb</h3>
@@ -201,10 +202,7 @@
             <!-- Mitarbeiter View -->
             <div id="mitarbeiterView" class="view">
                 <h2>Mitarbeiterverwaltung</h2>
-                <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px;">
-                    <div id="employeesList" class="employees-list"></div>
-                    <div id="onlineUsersContainer" style="background: var(--bg-secondary); padding: 20px; border-radius: 12px; border: 1px solid var(--border-color); height: fit-content; position: sticky; top: 20px;"></div>
-                </div>
+                <div class="employees-list" id="employeesList"></div>
             </div>
 
             <!-- Benutzerverwaltung View -->
@@ -235,8 +233,8 @@
             <div id="dienstplanView" class="view">
                 <h2>Dienstplan</h2>
                 
-                <div class="section" id="dienstplanFormSection" style="display: none;">
-                    <h3>Neuen Dienstplan-Eintrag erstellen</h3>
+                <div class="section" id="dienstplanFormSection">
+                    <h3>Wöchentlichen Dienstplan erstellen</h3>
                     <form id="dienstplanForm" class="product-form">
                         <select id="dienstplanDay" required>
                             <option value="">Tag auswählen</option>
@@ -286,6 +284,63 @@
                 </div>
                 
                 <div id="salesLogs" class="logs-table"></div>
+            </div>
+
+            <!-- Datenbank View -->
+            <div id="datenbankView" class="view">
+                <h2>📊 Datenbank Management</h2>
+                
+                <div class="db-view-section">
+                    <h3>🗃️ Benutzer</h3>
+                    <table class="db-table" id="dbUsersTable">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Name</th>
+                                <th>Username</th>
+                                <th>Rolle</th>
+                                <th>Erstellt</th>
+                                <th>Status</th>
+                                <th>Aktionen</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dbUsersBody"></tbody>
+                    </table>
+                </div>
+                
+                <div class="db-view-section">
+                    <h3>📦 Produkte</h3>
+                    <table class="db-table" id="dbProductsTable">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Name</th>
+                                <th>Preis</th>
+                                <th>Lager</th>
+                                <th>Kategorie</th>
+                                <th>Aktionen</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dbProductsBody"></tbody>
+                    </table>
+                </div>
+                
+                <div class="db-view-section">
+                    <h3>💰 Verkäufe</h3>
+                    <table class="db-table" id="dbSalesTable">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Datum</th>
+                                <th>Mitarbeiter</th>
+                                <th>Gesamt</th>
+                                <th>Produkte</th>
+                                <th>Aktionen</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dbSalesBody"></tbody>
+                    </table>
+                </div>
             </div>
 
             <!-- Einstellungen View -->
